@@ -1,8 +1,8 @@
-# TriageGuard AI — Architecture
+# Tazama — Architecture
 
 ## Project status
 
-TriageGuard AI is a research prototype for human-supervised
+Tazama is a research prototype for human-supervised
 clinical triage workflow support.
 
 The prototype uses synthetic patient data only.

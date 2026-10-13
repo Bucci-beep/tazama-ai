@@ -854,7 +854,7 @@ wheels = [
 ]
 
 [[package]]
-name = "triageguard-ai"
+name = "tazama"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

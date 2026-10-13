@@ -11,7 +11,7 @@ from mcp.client.stdio import stdio_client
 def server_parameters() -> StdioServerParameters:
     return StdioServerParameters(
         command=sys.executable,
-        args=["-m", "triageguard.mcp.server"],
+        args=["-m", "tazama.mcp.server"],
     )
 
 

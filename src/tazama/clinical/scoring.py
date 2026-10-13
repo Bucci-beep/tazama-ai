@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from triageguard.mcp.contracts import PatientObservations
+from tazama.mcp.contracts import PatientObservations
 
 
 class CalculateSATSRequest(BaseModel):

@@ -1,5 +1,5 @@
 
-# TriageGuard AI
+# Tazama
 
 A human-supervised agentic clinical triage research prototype for the Agentic AI for Africa Healthcare Challenge.
 

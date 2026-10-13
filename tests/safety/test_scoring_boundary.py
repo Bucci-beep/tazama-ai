@@ -1,12 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from triageguard.clinical.scoring import (
+from tazama.clinical.scoring import (
     CalculateSATSRequest,
     UnavailableSATSResult,
     calculate_sats,
 )
-from triageguard.mcp.contracts import PatientObservations
+from tazama.mcp.contracts import PatientObservations
 
 
 def make_request() -> CalculateSATSRequest:
