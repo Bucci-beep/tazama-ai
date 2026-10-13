@@ -1,11 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from triageguard.mcp.contracts import (
+from tazama.mcp.contracts import (
     PatientObservations,
     ValidateObservationsRequest,
 )
-from triageguard.mcp.validation import validate_observations
+from tazama.mcp.validation import validate_observations
 
 
 def test_missing_observations_are_preserved():

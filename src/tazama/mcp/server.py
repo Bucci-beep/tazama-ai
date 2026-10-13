@@ -1,23 +1,23 @@
-"""Local MCP server for deterministic TriageGuard tools."""
+"""Local MCP server for deterministic Tazama tools."""
 
 from mcp.server.fastmcp import FastMCP
 
-from triageguard.clinical.scoring import (
+from tazama.clinical.scoring import (
     CalculateSATSRequest,
     UnavailableSATSResult,
 )
-from triageguard.clinical.scoring import (
+from tazama.clinical.scoring import (
     calculate_sats as calculate_sats_core,
 )
-from triageguard.mcp.contracts import (
+from tazama.mcp.contracts import (
     ValidateObservationsRequest,
     ValidateObservationsResponse,
 )
-from triageguard.mcp.validation import (
+from tazama.mcp.validation import (
     validate_observations as validate_observations_core,
 )
 
-mcp = FastMCP("TriageGuard Clinical Tools")
+mcp = FastMCP("Tazama Clinical Tools")
 
 
 @mcp.tool()

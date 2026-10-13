@@ -1,4 +1,4 @@
-from triageguard.mcp.contracts import (
+from tazama.mcp.contracts import (
     PatientObservations,
     ValidateObservationsRequest,
     ValidateObservationsResponse,
