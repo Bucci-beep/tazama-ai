@@ -1,0 +1,44 @@
+"""Local MCP server for deterministic TriageGuard tools."""
+
+from mcp.server.fastmcp import FastMCP
+
+from triageguard.clinical.scoring import (
+    CalculateSATSRequest,
+    UnavailableSATSResult,
+)
+from triageguard.clinical.scoring import (
+    calculate_sats as calculate_sats_core,
+)
+from triageguard.mcp.contracts import (
+    ValidateObservationsRequest,
+    ValidateObservationsResponse,
+)
+from triageguard.mcp.validation import (
+    validate_observations as validate_observations_core,
+)
+
+mcp = FastMCP("TriageGuard Clinical Tools")
+
+
+@mcp.tool()
+def validate_observations(
+    request: ValidateObservationsRequest,
+) -> ValidateObservationsResponse:
+    """Report missing synthetic observations; do not assess clinical readiness."""
+    return validate_observations_core(request)
+
+
+@mcp.tool()
+def calculate_sats(
+    request: CalculateSATSRequest,
+) -> UnavailableSATSResult:
+    """Return unavailable until a verified SATS scoring engine is installed."""
+    return calculate_sats_core(request)
+
+
+def main() -> None:
+    mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()
