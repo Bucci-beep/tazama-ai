@@ -24,3 +24,11 @@ class TriageWorkflowState(TimelineFields):
     case_id: str
     status: WorkflowStatus
     reason: str | None
+
+
+class HistoryComparisonFields(TypedDict, total=False):
+    """Reserved contract for future workflow extensions."""
+
+    comparison_status: str | None
+    comparison_result: dict | None
+    comparison_error: str | None
