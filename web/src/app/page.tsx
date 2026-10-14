@@ -1,12 +1,11 @@
+import { Suspense } from "react";
+import { BackendStatus } from "@/components/dashboard/backend-status";
 import { SafetyNotice } from "@/components/dashboard/safety-notice";
 import {
   Activity,
-  ArrowUpRight,
   ClipboardList,
-  Database,
   FileClock,
   HeartPulse,
-  LockKeyhole,
 } from "lucide-react";
 
 const capabilities = [
@@ -118,29 +117,23 @@ export default function Home() {
               </div>
             </section>
 
-            <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-              <div className="flex items-start gap-4">
-                <div className="rounded-xl bg-slate-100 p-3">
-                  <Database size={22} className="text-slate-700" />
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-lg font-semibold">Backend connection</h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    No HTTP API connection has been configured. Live cases,
-                    scoring results, review queues, and audit records will
-                    appear only after verified backend integration.
+            <Suspense
+              fallback={
+                <section
+                  role="status"
+                  className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8"
+                >
+                  <h2 className="text-lg font-semibold">
+                    Backend connection
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Checking local API availability...
                   </p>
-                  <div className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-slate-500">
-                    <LockKeyhole size={16} />
-                    Not connected
-                  </div>
-                </div>
-                <ArrowUpRight
-                  className="hidden text-slate-300 sm:block"
-                  size={20}
-                />
-              </div>
-            </section>
+                </section>
+              }
+            >
+              <BackendStatus />
+            </Suspense>
           </main>
 
           <footer className="border-t border-slate-200 px-5 py-5 text-xs text-slate-500 sm:px-10">
