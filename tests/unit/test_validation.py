@@ -34,7 +34,7 @@ def test_no_observations_does_not_trigger_scoring():
     result = validate_observations(request)
 
     assert result.status == "pending_protocol"
-    assert len(result.missing_fields) == 6
+    assert set(result.missing_fields) == set(PatientObservations.model_fields)
 
 
 def test_unknown_observation_is_rejected():

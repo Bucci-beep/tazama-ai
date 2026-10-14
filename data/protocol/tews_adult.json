@@ -1,0 +1,102 @@
+{
+  "protocol_id": "SATS-ADULT-TEWS",
+  "protocol_version": "2015-chart-1",
+  "applies_to": "Older than 12 years / taller than 150 cm",
+  "attribution": {
+    "title": "Adult SATS Chart (Adult-SATS-2015.pdf)",
+    "publisher": "Emergency Medicine Society of South Africa (EMSSA) / South African Triage Group",
+    "licence": "CC BY-NC-SA 3.0",
+    "licence_url": "https://creativecommons.org/licenses/by-nc-sa/3.0/",
+    "changes": "Table values transcribed by hand into JSON. Parameter names and value labels adapted to the Tazama contract. No thresholds were altered.",
+    "notice": "This file is a separate work from the Tazama source code. The code is Apache-2.0. This data file is CC BY-NC-SA 3.0 (non-commercial, share-alike)."
+  },
+  "notes": [
+    "The chart lists whole numbers for RR, HR and SBP. Readings that fall between listed bands (for example RR 14.5) are not covered by the chart, so the scorer must abstain on them, not round.",
+    "Temperature bands: under 35 scores 2, 35 to 38.4 inclusive scores 0, over 38.4 scores 2.",
+    "SpO2 is not scored in the TEWS.",
+    "Priority is the highest of the discriminator level and the TEWS band. Discriminators are not in this file."
+  ],
+  "parameters": {
+    "mobility": {
+      "type": "category",
+      "contract_field": "mobility",
+      "values": [
+        { "rule_id": "TEWS/MOBILITY/WALKING", "value": "walking", "score": 0 },
+        { "rule_id": "TEWS/MOBILITY/WITH_HELP", "value": "with_help", "score": 1 },
+        { "rule_id": "TEWS/MOBILITY/STRETCHER_IMMOBILE", "value": "stretcher_immobile", "score": 2 }
+      ]
+    },
+    "respiratory_rate": {
+      "type": "range",
+      "contract_field": "respiratory_rate_bpm",
+      "integer_only": true,
+      "bands": [
+        { "rule_id": "TEWS/RR/LT9", "max_exclusive": 9, "score": 2 },
+        { "rule_id": "TEWS/RR/9-14", "min": 9, "max": 14, "score": 0 },
+        { "rule_id": "TEWS/RR/15-20", "min": 15, "max": 20, "score": 1 },
+        { "rule_id": "TEWS/RR/21-29", "min": 21, "max": 29, "score": 2 },
+        { "rule_id": "TEWS/RR/GT29", "min_exclusive": 29, "score": 3 }
+      ]
+    },
+    "heart_rate": {
+      "type": "range",
+      "contract_field": "heart_rate_bpm",
+      "integer_only": true,
+      "bands": [
+        { "rule_id": "TEWS/HR/LT41", "max_exclusive": 41, "score": 2 },
+        { "rule_id": "TEWS/HR/41-50", "min": 41, "max": 50, "score": 1 },
+        { "rule_id": "TEWS/HR/51-100", "min": 51, "max": 100, "score": 0 },
+        { "rule_id": "TEWS/HR/101-110", "min": 101, "max": 110, "score": 1 },
+        { "rule_id": "TEWS/HR/111-129", "min": 111, "max": 129, "score": 2 },
+        { "rule_id": "TEWS/HR/GT129", "min_exclusive": 129, "score": 3 }
+      ]
+    },
+    "systolic_bp": {
+      "type": "range",
+      "contract_field": "systolic_bp_mmhg",
+      "integer_only": true,
+      "bands": [
+        { "rule_id": "TEWS/SBP/LT71", "max_exclusive": 71, "score": 3 },
+        { "rule_id": "TEWS/SBP/71-80", "min": 71, "max": 80, "score": 2 },
+        { "rule_id": "TEWS/SBP/81-100", "min": 81, "max": 100, "score": 1 },
+        { "rule_id": "TEWS/SBP/101-199", "min": 101, "max": 199, "score": 0 },
+        { "rule_id": "TEWS/SBP/GT199", "min_exclusive": 199, "score": 2 }
+      ]
+    },
+    "temperature": {
+      "type": "range",
+      "contract_field": "temperature_c",
+      "integer_only": false,
+      "bands": [
+        { "rule_id": "TEWS/TEMP/LT35", "max_exclusive": 35, "score": 2 },
+        { "rule_id": "TEWS/TEMP/35-38.4", "min": 35, "max": 38.4, "score": 0 },
+        { "rule_id": "TEWS/TEMP/GT38.4", "min_exclusive": 38.4, "score": 2 }
+      ]
+    },
+    "avpu": {
+      "type": "category",
+      "contract_field": "consciousness",
+      "values": [
+        { "rule_id": "TEWS/AVPU/ALERT", "value": "alert", "score": 0 },
+        { "rule_id": "TEWS/AVPU/CONFUSED", "value": "confused", "score": 2 },
+        { "rule_id": "TEWS/AVPU/VOICE", "value": "voice", "score": 1 },
+        { "rule_id": "TEWS/AVPU/PAIN", "value": "pain", "score": 2 },
+        { "rule_id": "TEWS/AVPU/UNRESPONSIVE", "value": "unresponsive", "score": 3 }
+      ]
+    },
+    "trauma": {
+      "type": "boolean",
+      "contract_field": "trauma",
+      "values": [
+        { "rule_id": "TEWS/TRAUMA/NO", "value": false, "score": 0 },
+        { "rule_id": "TEWS/TRAUMA/YES", "value": true, "score": 1 }
+      ]
+    }
+  },
+  "bands": [
+    { "rule_id": "TEWS/BAND/ROUTINE", "min": 0, "max": 2, "priority": "routine", "colour": "green" },
+    { "rule_id": "TEWS/BAND/URGENT", "min": 3, "max": 4, "priority": "urgent", "colour": "yellow" },
+    { "rule_id": "TEWS/BAND/VERY_URGENT", "min": 5, "max": 6, "priority": "very_urgent", "colour": "orange" },
+    { "rule_id": "TEWS/BAND/EMERGENCY", "min": 7, "priority": "emergency", "colour": "red" }
+  ]
+}
