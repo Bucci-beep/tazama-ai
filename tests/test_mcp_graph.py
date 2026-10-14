@@ -1,4 +1,4 @@
-"""LangGraph-to-MCP integration tests using synthetic patient data."""
+"""LangGraph-to-MCP workflow tests using synthetic patient data."""
 
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
@@ -9,6 +9,9 @@ from tazama.clinical.history import CompareHistoryResult
 from tazama.mcp.contracts import PatientObservations
 from tazama.orchestration.mcp_graph import build_mcp_triage_graph
 from tazama.patients.models import ObservationRecord, PatientTimeline
+from tazama.storage.database import Database
+from tazama.storage.observations import ObservationRepository
+from tazama.storage.reviews import ReviewRepository, ReviewRequest
 
 
 def make_timeline(count: int) -> PatientTimeline:
@@ -39,93 +42,174 @@ def initial_state(case_id="CASE-MCP-001"):
     return {"case_id": case_id, "status": "pending", "reason": None}
 
 
+async def fake_history(request):
+    return CompareHistoryResult(
+        case_id=request.case_id,
+        status="differences_found",
+    )
+
+
+async def fake_review(request):
+    return ReviewRequest(
+        request_id="REVIEW-001",
+        case_id=request.case_id,
+        observation_id=request.observation_id,
+        status="pending",
+        created_at=datetime.now(UTC),
+        comparison_status=request.comparison_status,
+        evidence=request.evidence,
+    )
+
+
 @pytest.mark.asyncio
 async def test_comparison_uses_latest_two_observations():
     received = []
 
-    async def fake_tool(request):
+    async def history(request):
         received.append(request)
-        return CompareHistoryResult(
-            case_id=request.case_id,
-            status="differences_found",
-        )
+        return await fake_history(request)
 
-    graph = build_mcp_triage_graph(repository_for(3), fake_tool)
+    graph = build_mcp_triage_graph(repository_for(3), history, fake_review)
     result = await graph.ainvoke(initial_state())
 
     assert received[0].before.obs_id == "OBS-2"
     assert received[0].after.obs_id == "OBS-3"
     assert result["comparison_status"] == "differences_found"
+    assert result["review_request_id"] == "REVIEW-001"
+    assert result["review_submission_status"] == "persisted"
     assert result["status"] == "awaiting_clinician_review"
 
 
 @pytest.mark.asyncio
-async def test_empty_timeline_skips_mcp():
-    calls = []
+async def test_empty_timeline_never_submits_review():
+    async def forbidden(request):
+        raise AssertionError("No MCP call should occur")
 
-    async def fake_tool(request):
-        calls.append(request)
-        raise AssertionError("MCP should not be called")
-
-    graph = build_mcp_triage_graph(repository_for(0), fake_tool)
+    graph = build_mcp_triage_graph(repository_for(0), forbidden, forbidden)
     result = await graph.ainvoke(initial_state())
 
-    assert calls == []
     assert result["comparison_status"] == "insufficient_history"
-    assert result["comparison_result"]["reason"] == "NO_OBSERVATIONS"
+    assert result["status"] == "observation_missing"
+    assert result["review_submission_status"] == "not_attempted"
+    assert result["review_request_id"] is None
 
 
 @pytest.mark.asyncio
-async def test_mcp_failure_does_not_produce_reassuring_result():
-    async def broken_tool(request):
-        raise RuntimeError("Connection failed")
+async def test_history_failure_still_requests_review():
+    async def broken_history(request):
+        raise RuntimeError("History MCP unavailable")
 
-    graph = build_mcp_triage_graph(repository_for(2), broken_tool)
+    received = []
+
+    async def review(request):
+        received.append(request)
+        return await fake_review(request)
+
+    graph = build_mcp_triage_graph(repository_for(2), broken_history, review)
     result = await graph.ainvoke(initial_state())
 
     assert result["comparison_status"] == "tool_unavailable"
     assert result["comparison_result"] is None
-    assert result["comparison_error"] == "MCP_HISTORY_TOOL_UNAVAILABLE"
+    assert received[0].comparison_status == "tool_unavailable"
+    assert result["review_submission_status"] == "persisted"
     assert result["status"] == "awaiting_clinician_review"
+    assert result["reason"] == "HISTORY_COMPARISON_UNAVAILABLE"
 
 
 @pytest.mark.asyncio
-async def test_invalid_case_never_queries_sqlite_or_mcp():
-    repo = repository_for(2)
+async def test_invalid_case_never_queries_repository_or_mcp():
+    repository = repository_for(2)
 
-    async def fake_tool(request):
-        raise AssertionError("MCP should not be called")
+    async def forbidden(request):
+        raise AssertionError("MCP must not be called")
 
-    graph = build_mcp_triage_graph(repo, fake_tool)
+    graph = build_mcp_triage_graph(repository, forbidden, forbidden)
     result = await graph.ainvoke(initial_state("  "))
 
-    repo.get_timeline.assert_not_called()
+    repository.get_timeline.assert_not_called()
     assert result["status"] == "invalid_input"
+    assert result["review_submission_status"] == "not_attempted"
 
 
 @pytest.mark.asyncio
-async def test_mismatched_mcp_case_is_not_accepted():
-    async def wrong_case_tool(request):
+async def test_mismatched_history_case_is_not_reassuring():
+    async def wrong_history(request):
         return CompareHistoryResult(
             case_id="DIFFERENT-CASE",
             status="no_differences",
         )
 
-    graph = build_mcp_triage_graph(repository_for(2), wrong_case_tool)
+    graph = build_mcp_triage_graph(repository_for(2), wrong_history, fake_review)
     result = await graph.ainvoke(initial_state())
 
     assert result["comparison_status"] == "tool_unavailable"
     assert result["comparison_result"] is None
     assert result["comparison_error"] == "MCP_HISTORY_CASE_MISMATCH"
+    assert result["status"] == "awaiting_clinician_review"
 
 
 @pytest.mark.asyncio
-async def test_real_mcp_stdio_tool():
-    """Exercise the actual MCP server with synthetic observations."""
-    graph = build_mcp_triage_graph(repository_for(2))
+async def test_review_submission_failure_is_not_reported_as_queued():
+    async def broken_review(request):
+        raise RuntimeError("MCP connection lost")
+
+    graph = build_mcp_triage_graph(repository_for(2), fake_history, broken_review)
     result = await graph.ainvoke(initial_state())
 
-    assert result["comparison_status"] == "differences_found", result
-    assert result["comparison_result"]["changes"][0]["field"] == ("heart_rate_bpm")
-    assert result["comparison_error"] is None
-    assert result["status"] == "awaiting_clinician_review"
+    assert result["status"] == "review_submission_failed"
+    assert result["review_submission_status"] == "unconfirmed"
+    assert result["review_request_id"] is None
+    assert result["reason"] == "MCP_REVIEW_SUBMISSION_UNCONFIRMED"
+
+
+@pytest.mark.asyncio
+async def test_mismatched_review_response_fails_closed():
+    async def wrong_review(request):
+        return ReviewRequest(
+            request_id="WRONG-REVIEW",
+            case_id="DIFFERENT-CASE",
+            observation_id=request.observation_id,
+            status="pending",
+            created_at=datetime.now(UTC),
+            comparison_status=request.comparison_status,
+            evidence=request.evidence,
+        )
+
+    graph = build_mcp_triage_graph(repository_for(2), fake_history, wrong_review)
+    result = await graph.ainvoke(initial_state())
+
+    assert result["status"] == "review_submission_failed"
+    assert result["review_request_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_real_mcp_history_and_review_submission(tmp_path):
+    """Exercise both real MCP tools and persistent SQLite storage."""
+    database = Database(tmp_path / "workflow.sqlite3")
+    database.initialize()
+
+    repository = ObservationRepository(database)
+    for record in make_timeline(2).records:
+        repository.save(record)
+
+    graph = build_mcp_triage_graph(repository)
+
+    first = await graph.ainvoke(initial_state())
+    second = await graph.ainvoke(initial_state())
+
+    assert first["comparison_status"] == "differences_found"
+    assert first["comparison_error"] is None
+    assert first["status"] == "awaiting_clinician_review"
+    assert first["review_submission_status"] == "persisted"
+    assert first["review_request_id"] == second["review_request_id"]
+
+    reviews = ReviewRepository(database).get_pending()
+    assert len(reviews) == 1
+    assert reviews[0].observation_id == "OBS-2"
+
+    with database.connect() as connection:
+        event_count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert event_count == 1

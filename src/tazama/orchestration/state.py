@@ -5,6 +5,8 @@ from typing import Literal, TypedDict
 WorkflowStatus = Literal[
     "pending",
     "awaiting_clinician_review",
+    "review_submission_failed",
+    "observation_missing",
     "invalid_input",
 ]
 
