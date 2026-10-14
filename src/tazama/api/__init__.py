@@ -1,1 +1,1 @@
-"""Read-only HTTP interface for the Tazama research prototype."""
+"""HTTP interface for the synthetic-data Tazama research prototype."""

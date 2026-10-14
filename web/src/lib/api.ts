@@ -40,6 +40,16 @@ export type CaseTimelineResult =
   | { status: "not_found" }
   | { status: "unavailable"; reason: string };
 
+export type CreateObservationInput = {
+  recorded_at: string;
+  observation_type: "baseline" | "recheck";
+  observations: PatientObservations;
+};
+
+export type CreateObservationResult =
+  | { status: "created"; record: ObservationRecord }
+  | { status: "invalid" | "conflict" | "unavailable"; reason: string };
+
 function apiBaseUrl(): string {
   return process.env.TAZAMA_API_URL ?? "http://127.0.0.1:8000";
 }
@@ -135,6 +145,76 @@ export async function getCaseTimeline(
     }
 
     return { status: "found", timeline: data as CaseTimeline };
+  } catch {
+    return {
+      status: "unavailable",
+      reason: "Unable to reach the local Tazama API",
+    };
+  }
+}
+
+function errorDetail(data: unknown, fallback: string): string {
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "detail" in data &&
+    typeof data.detail === "string"
+  ) {
+    return data.detail;
+  }
+  return fallback;
+}
+
+export async function createCaseObservation(
+  caseId: string,
+  input: CreateObservationInput,
+): Promise<CreateObservationResult> {
+  try {
+    const response = await fetch(
+      `${apiBaseUrl()}/api/v1/cases/${encodeURIComponent(caseId)}/observations`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+        cache: "no-store",
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+    const data: unknown = await response.json();
+
+    if (response.status === 409) {
+      return {
+        status: "conflict",
+        reason: errorDetail(data, "Observation conflicts with this timeline"),
+      };
+    }
+    if (response.status === 422) {
+      return {
+        status: "invalid",
+        reason: "The API rejected one or more observation fields",
+      };
+    }
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        reason: errorDetail(data, `API returned HTTP ${response.status}`),
+      };
+    }
+
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      !("observation_id" in data) ||
+      !("case_id" in data) ||
+      data.case_id !== caseId
+    ) {
+      return {
+        status: "unavailable",
+        reason: "API returned an unexpected observation response",
+      };
+    }
+
+    return { status: "created", record: data as ObservationRecord };
   } catch {
     return {
       status: "unavailable",

@@ -39,14 +39,15 @@ Run tests:
 uv run pytest
 ```
 
-## Read-only API
+## Observation API
 
-The API exposes persisted synthetic observations without scoring, interpretation, workflow
-execution, or database writes:
+The API retrieves and records persisted synthetic observations without scoring,
+interpretation, or workflow execution:
 
 ```text
 GET /api/v1/health
 GET /api/v1/cases/{case_id}/observations
+POST /api/v1/cases/{case_id}/observations
 ```
 
 Configure the same existing SQLite file used by the backend, then start the service:
@@ -61,7 +62,9 @@ invalid SQLite file, or database without the observations schema returns HTTP 50
 with no persisted observations returns HTTP 404.
 
 The observation response contains the case ID and chronological `ObservationRecord` values,
-including timestamps and structured measurements. It contains no demographics, computed
+including timestamps and structured measurements. A POSTed `baseline` creates the synthetic
+case timeline; later `recheck` observations must have strictly increasing timestamps. Saving an
+observation does not run scoring or analysis. Responses contain no demographics, computed
 priority, diagnosis, or inferred clinical status.
 
 For local Next.js development, set the dashboard's server-side API base URL to

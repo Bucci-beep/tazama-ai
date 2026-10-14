@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { BackendStatus } from "@/components/dashboard/backend-status";
 import { CaseObservations } from "@/components/dashboard/case-observations";
+import { ObservationForm } from "@/components/dashboard/observation-form";
 import { SafetyNotice } from "@/components/dashboard/safety-notice";
 import {
   Activity,
@@ -33,60 +34,103 @@ const capabilities = [
 async function CaseLookup({
   searchParams,
 }: {
-  searchParams: Promise<{ case_id?: string }>;
+  searchParams: Promise<{ case_id?: string; saved?: string }>;
 }) {
-  const caseId = (await searchParams).case_id?.trim() ?? "";
+  const params = await searchParams;
+  const caseId = params.case_id?.trim() ?? "";
+  const saved = params.saved === "baseline" || params.saved === "recheck";
 
   return (
-    <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
-      <h2 className="text-lg font-semibold">Persisted observations</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600">
-        Retrieve a synthetic case timeline. Values are recorded evidence only;
-        this view performs no scoring or clinical interpretation.
-      </p>
-      <form className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <label className="sr-only" htmlFor="case-id">
-          Synthetic case identifier
-        </label>
-        <input
-          id="case-id"
-          name="case_id"
-          defaultValue={caseId}
-          placeholder="SYNTHETIC-DEMO-001"
-          required
-          className="min-w-0 flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-        />
-        <button
-          type="submit"
-          className="rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-300"
-        >
-          Load observations
-        </button>
-      </form>
-      {caseId ? (
-        <Suspense
-          key={caseId}
-          fallback={
-            <p role="status" className="mt-5 text-sm text-slate-500">
-              Loading persisted observations...
-            </p>
-          }
-        >
-          <CaseObservations caseId={caseId} />
-        </Suspense>
-      ) : (
-        <p className="mt-5 text-sm text-slate-500">
-          Enter a synthetic case identifier to load its observations.
+    <>
+      <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+        <h2 className="text-lg font-semibold">Record synthetic observations</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          A baseline registers a synthetic case. Reassessments must use a later
+          UTC timestamp. Saving does not run scoring or analysis.
         </p>
-      )}
-    </section>
+        {saved ? (
+          <p
+            role="status"
+            className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+          >
+            Observation saved. The timeline below now shows persisted data.
+          </p>
+        ) : null}
+        <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <article className="rounded-xl border border-slate-200 p-5">
+            <h3 className="font-semibold">New synthetic case</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Register a case by recording its first baseline observation.
+            </p>
+            <ObservationForm
+              observationType="baseline"
+              selectedCaseId={caseId}
+            />
+          </article>
+          <article className="rounded-xl border border-slate-200 p-5">
+            <h3 className="font-semibold">Reassessment</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Append a later observation to an existing synthetic case.
+            </p>
+            <ObservationForm
+              observationType="recheck"
+              selectedCaseId={caseId}
+            />
+          </article>
+        </div>
+      </section>
+
+      <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+        <h2 className="text-lg font-semibold">Persisted observations</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Retrieve a synthetic case timeline. Values are recorded evidence only;
+          this view performs no scoring or clinical interpretation.
+        </p>
+        <form className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <label className="sr-only" htmlFor="case-id">
+            Synthetic case identifier
+          </label>
+          <input
+            id="case-id"
+            name="case_id"
+            defaultValue={caseId}
+            pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,99}"
+            placeholder="SYNTHETIC-DEMO-001"
+            required
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+          />
+          <button
+            type="submit"
+            className="rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-300"
+          >
+            Load observations
+          </button>
+        </form>
+        {caseId ? (
+          <Suspense
+            key={caseId}
+            fallback={
+              <p role="status" className="mt-5 text-sm text-slate-500">
+                Loading persisted observations...
+              </p>
+            }
+          >
+            <CaseObservations caseId={caseId} />
+          </Suspense>
+        ) : (
+          <p className="mt-5 text-sm text-slate-500">
+            Enter a synthetic case identifier to load its observations.
+          </p>
+        )}
+      </section>
+    </>
   );
 }
 
 export default function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ case_id?: string }>;
+  searchParams: Promise<{ case_id?: string; saved?: string }>;
 }) {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
