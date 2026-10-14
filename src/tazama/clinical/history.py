@@ -18,7 +18,9 @@ class TimedObservation(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     obs_id: str = Field(min_length=1)
-    taken_utc: str | None = None  # ISO 8601 with timezone, e.g. 2026-10-13T08:10:00+00:00
+    taken_utc: str | None = (
+        None  # ISO 8601 with timezone, e.g. 2026-10-13T08:10:00+00:00
+    )
     observations: PatientObservations
 
 
@@ -58,7 +60,7 @@ def _parse(ts: str | None) -> datetime | None:
     if ts is None:
         return None
     try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))  # noqa: FURB162
     except ValueError:
         return None
     return dt if dt.tzinfo is not None else None

@@ -31,7 +31,9 @@ async def call_priority(server_parameters, request):
         ClientSession(read, write) as session,
     ):
         await session.initialize()
-        result = await session.call_tool("determine_priority", arguments={"request": request})
+        result = await session.call_tool(
+            "determine_priority", arguments={"request": request}
+        )
 
     assert not result.isError
     payload = result.structuredContent

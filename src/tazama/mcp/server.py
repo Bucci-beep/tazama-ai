@@ -1,5 +1,7 @@
 """Local MCP server for deterministic Tazama tools."""
 
+import os
+
 from mcp.server.fastmcp import FastMCP
 
 from tazama.clinical.history import (
@@ -30,6 +32,12 @@ from tazama.mcp.contracts import (
 from tazama.mcp.priority_contract import DeterminePriorityRequest
 from tazama.mcp.validation import (
     validate_observations as validate_observations_core,
+)
+from tazama.storage.database import Database
+from tazama.storage.reviews import (
+    ReviewRepository,
+    ReviewRequest,
+    SubmitReviewRequest,
 )
 
 mcp = FastMCP("Tazama Clinical Tools")
@@ -64,15 +72,28 @@ def compare_with_history(
 
 
 @mcp.tool()
+def submit_review_request(request: SubmitReviewRequest) -> ReviewRequest:
+    """Persist a review request; never approve or change clinical priority."""
+    database_path = os.environ.get("TAZAMA_DB_PATH")
+
+    if not database_path:
+        raise ValueError("TAZAMA_DB_PATH is required for review submission")
+
+    database = Database(database_path)
+    repository = ReviewRepository(database)
+    repository.initialize()
+    return repository.submit(request)
+
+
+@mcp.tool()
 def determine_priority(
     request: DeterminePriorityRequest,
 ) -> PriorityResult:
-    """Combine nurse-identified signs with the TEWS into a SATS priority.
+    """Propose SATS priority from nurse-identified signs and TEWS.
 
-    The final priority is the highest of the sign level and the TEWS band. Signs are given
-    by the nurse; this tool never detects them. If signs are not assessed or the TEWS cannot
-    be calculated, the result is "at least X" or abstained, never a final priority. This
-    tool proposes only; a named nurse must approve any outcome.
+    Signs are supplied by a nurse, not detected automatically.
+    Missing or unscorable evidence prevents a definitive priority.
+    The proposal requires clinician approval.
     """
     return determine_priority_core(request.observations, request.signs)
 

@@ -90,7 +90,11 @@ def test_chart_boundaries(field, value, expected):
         ({"respiratory_rate_bpm": 15.0, "heart_rate_bpm": 101.0}, 2, "routine"),
         ({"respiratory_rate_bpm": 21.0, "heart_rate_bpm": 101.0}, 3, "urgent"),
         (
-            {"respiratory_rate_bpm": 21.0, "heart_rate_bpm": 111.0, "mobility": "with_help"},
+            {
+                "respiratory_rate_bpm": 21.0,
+                "heart_rate_bpm": 111.0,
+                "mobility": "with_help",
+            },
             5,
             "very_urgent",
         ),
@@ -144,7 +148,7 @@ def test_spo2_is_not_scored():
 
 def test_priority_bands_cover_every_total_exactly_once():
     protocol = load_protocol()
-    for total in range(0, 25):
+    for total in range(25):
         hits = [
             band
             for band in protocol["bands"]
