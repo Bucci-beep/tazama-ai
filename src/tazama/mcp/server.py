@@ -11,6 +11,7 @@ from tazama.clinical.history import (
 )
 from tazama.clinical.scoring import (
     CalculateSATSRequest,
+    ScoredSATSResult,
     UnavailableSATSResult,
 )
 from tazama.clinical.scoring import (
@@ -38,8 +39,12 @@ def validate_observations(
 @mcp.tool()
 def calculate_sats(
     request: CalculateSATSRequest,
-) -> UnavailableSATSResult:
-    """Return unavailable until a verified SATS scoring engine is installed."""
+) -> ScoredSATSResult | UnavailableSATSResult:
+    """Calculate the SATS TEWS from the protocol file, or return unavailable.
+
+    Abstains when any observation is missing or off-chart. Covers the TEWS only; the
+    chart's emergency, very urgent and urgent signs are not applied.
+    """
     return calculate_sats_core(request)
 
 
