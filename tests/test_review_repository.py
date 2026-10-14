@@ -130,6 +130,19 @@ def test_conflicting_retry_is_rejected(setup):
     assert count == 1
 
 
+def test_retry_preserves_first_explanation_without_clinical_conflict(setup):
+    _, reviews = setup
+    first = reviews.submit(
+        request(evidence={"reason": "Baseline only", "explanation": {"model": "a"}})
+    )
+    second = reviews.submit(
+        request(evidence={"reason": "Baseline only", "explanation": {"model": "b"}})
+    )
+
+    assert second.request_id == first.request_id
+    assert second.evidence["explanation"] == {"model": "a"}
+
+
 def test_reinitialization_preserves_review_requests(setup):
     database, reviews = setup
     reviews.submit(request())

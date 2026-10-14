@@ -13,6 +13,7 @@ from tazama.storage.reviews import (
     ReviewRequest,
     SubmitAttestation,
     SubmitReviewRequest,
+    deterministic_evidence,
 )
 
 
@@ -70,7 +71,8 @@ async def submit_review_via_mcp(
         result.case_id != request.case_id
         or result.observation_id != request.observation_id
         or result.comparison_status != request.comparison_status
-        or result.evidence != request.evidence
+        or deterministic_evidence(result.evidence)
+        != deterministic_evidence(request.evidence)
         or result.status != "pending"
     ):
         raise RuntimeError("MCP_REVIEW_RESPONSE_MISMATCH")
@@ -89,7 +91,11 @@ async def attest_review_via_mcp(
     server = StdioServerParameters(
         command=sys.executable,
         args=["-m", "tazama.mcp.server"],
-        env={**os.environ, "TAZAMA_DB_PATH": str(path)},
+        env={
+            **os.environ,
+            "TAZAMA_DB_PATH": str(path),
+            "TAZAMA_ENABLE_DEMO_ATTESTATION": "1",
+        },
     )
     async with (
         stdio_client(server) as (read, write),

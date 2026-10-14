@@ -125,6 +125,10 @@ async def run_demo(database_path: Path, explanation_tool=None) -> dict:
             "action": attestation.action,
             "clinician_id": attestation.clinician_id,
             "identity_assurance": attestation.identity_assurance,
+            "identity_note": (
+                "Simulated clinician identity operated by this demonstration script; "
+                "not a person or authenticated clinical user"
+            ),
             "request_id": attestation.request_id,
         },
     }

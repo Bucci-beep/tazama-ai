@@ -147,6 +147,37 @@ async def test_priority_failure_is_persisted_as_unavailable_not_negative():
 
 
 @pytest.mark.asyncio
+async def test_bounded_explanation_is_in_persisted_review_evidence():
+    received = []
+
+    async def review(request):
+        received.append(request)
+        return await fake_review(request)
+
+    async def explain(evidence):
+        return {
+            "status": "generated",
+            "model": "test-model",
+            "selected_explanation_ids": ["human_review_required"],
+            "statements": ["The evidence requires clinician review."],
+        }
+
+    graph = build_mcp_triage_graph(
+        repository_for(2),
+        fake_history,
+        review,
+        explanation_tool=explain,
+    )
+    result = await graph.ainvoke(initial_state())
+
+    assert result["status"] == "awaiting_clinician_review"
+    assert received[0].evidence["explanation"]["model"] == "test-model"
+    assert received[0].evidence["explanation"]["selected_explanation_ids"] == [
+        "human_review_required"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_invalid_case_never_queries_repository_or_mcp():
     repository = repository_for(2)
 

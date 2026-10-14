@@ -14,7 +14,11 @@ from tazama.orchestration.mcp_review import submit_review_via_mcp
 from tazama.orchestration.state import TriageWorkflowState
 from tazama.patients.history_adapter import to_history_request
 from tazama.storage.observations import ObservationRepository
-from tazama.storage.reviews import ReviewRequest, SubmitReviewRequest
+from tazama.storage.reviews import (
+    ReviewRequest,
+    SubmitReviewRequest,
+    deterministic_evidence,
+)
 
 HistoryTool = Callable[
     [CompareHistoryRequest],
@@ -193,6 +197,8 @@ def build_mcp_triage_graph(
             "priority_result": state.get("priority_result"),
             "priority_error": state.get("priority_error"),
             "signs_assessed": state.get("signs") is not None,
+            "explanation": state.get("explanation"),
+            "explanation_error": state.get("explanation_error"),
         }
 
         request = SubmitReviewRequest(
@@ -210,7 +216,8 @@ def build_mcp_triage_graph(
                 or result.case_id != request.case_id
                 or result.observation_id != request.observation_id
                 or result.comparison_status != request.comparison_status
-                or result.evidence != request.evidence
+                or deterministic_evidence(result.evidence)
+                != deterministic_evidence(request.evidence)
                 or not result.request_id
             ):
                 raise ValueError("Review response does not match request")
@@ -291,13 +298,13 @@ def build_mcp_triage_graph(
         route_observation,
         {"submit": "assess_priority", "missing": "missing_observation"},
     )
-    builder.add_edge("assess_priority", "submit_review")
+    builder.add_edge("assess_priority", "explain_evidence")
+    builder.add_edge("explain_evidence", "submit_review")
     builder.add_conditional_edges(
         "submit_review",
         route_submission,
-        {"confirmed": "explain_evidence", "failed": "submission_failed"},
+        {"confirmed": "await_clinician_review", "failed": "submission_failed"},
     )
-    builder.add_edge("explain_evidence", "await_clinician_review")
     builder.add_edge("await_clinician_review", END)
     builder.add_edge("submission_failed", END)
     builder.add_edge("missing_observation", END)

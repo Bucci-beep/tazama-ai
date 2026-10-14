@@ -87,16 +87,18 @@ def submit_review_request(request: SubmitReviewRequest) -> ReviewRequest:
     return repository.submit(request)
 
 
-@mcp.tool()
-def record_demo_attestation(request: SubmitAttestation) -> ReviewAttestation:
-    """Record an asserted demo identity's disposition without changing priority."""
-    database_path = os.environ.get("TAZAMA_DB_PATH")
-    if not database_path:
-        raise ValueError("TAZAMA_DB_PATH is required for attestation")
-    database = Database(database_path)
-    repository = ReviewRepository(database)
-    repository.initialize()
-    return repository.attest(request)
+if os.environ.get("TAZAMA_ENABLE_DEMO_ATTESTATION") == "1":
+
+    @mcp.tool()
+    def record_demo_attestation(request: SubmitAttestation) -> ReviewAttestation:
+        """Record an asserted demo identity's disposition without changing priority."""
+        database_path = os.environ.get("TAZAMA_DB_PATH")
+        if not database_path:
+            raise ValueError("TAZAMA_DB_PATH is required for attestation")
+        database = Database(database_path)
+        repository = ReviewRepository(database)
+        repository.initialize()
+        return repository.attest(request)
 
 
 @mcp.tool()

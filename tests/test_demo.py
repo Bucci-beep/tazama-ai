@@ -26,5 +26,9 @@ async def test_synthetic_demo_persists_one_review_and_one_audit_event(tmp_path):
         "action": "approved",
         "clinician_id": "DEMO-CLINICIAN-001",
         "identity_assurance": "asserted_demo_identity",
+        "identity_note": (
+            "Simulated clinician identity operated by this demonstration script; "
+            "not a person or authenticated clinical user"
+        ),
         "request_id": result["review_request_id"],
     }

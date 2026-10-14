@@ -11,6 +11,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from tazama.storage.database import Database
 
 
+def deterministic_evidence(evidence: dict) -> dict:
+    """Return the fields that define clinical review idempotency."""
+    return {
+        key: value
+        for key, value in evidence.items()
+        if key not in {"explanation", "explanation_error"}
+    }
+
+
 class SubmitReviewRequest(BaseModel):
     """Evidence submitted for review, never an approval decision."""
 
@@ -203,10 +212,9 @@ class ReviewRepository:
             ).fetchone()
 
             if existing is not None:
-                if (
-                    existing[5] != request.comparison_status
-                    or json.loads(existing[6]) != request.evidence
-                ):
+                if existing[5] != request.comparison_status or deterministic_evidence(
+                    json.loads(existing[6])
+                ) != deterministic_evidence(request.evidence):
                     raise ValueError("Review already exists with different evidence")
 
                 return ReviewRequest(
