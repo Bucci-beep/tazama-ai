@@ -36,7 +36,12 @@ class UnscorableIssue(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     field: str
-    reason: Literal["not_a_whole_number", "not_a_finite_number", "no_matching_band", "unrecognised_value"]
+    reason: Literal[
+        "not_a_whole_number",
+        "not_a_finite_number",
+        "no_matching_band",
+        "unrecognised_value",
+    ]
     detail: str
 
 
@@ -72,15 +77,15 @@ def _in_band(value: float, band: dict[str, Any]) -> bool:
         return False
     if "max" in band and value > band["max"]:
         return False
-    if "max_exclusive" in band and value >= band["max_exclusive"]:
-        return False
-    return True
+    return not ("max_exclusive" in band and value >= band["max_exclusive"])
 
 
 def _score_range(field: str, spec: dict[str, Any], value: float):
     if not math.isfinite(value):
         return None, UnscorableIssue(
-            field=field, reason="not_a_finite_number", detail=f"{value!r} is not a finite number"
+            field=field,
+            reason="not_a_finite_number",
+            detail=f"{value!r} is not a finite number",
         )
     if spec.get("integer_only") and not float(value).is_integer():
         return None, UnscorableIssue(
@@ -96,7 +101,9 @@ def _score_range(field: str, spec: dict[str, Any], value: float):
             detail=f"{value} matched {len(matches)} chart bands",
         )
     band = matches[0]
-    return ParameterScore(field=field, value=value, score=band["score"], rule_id=band["rule_id"]), None
+    return ParameterScore(
+        field=field, value=value, score=band["score"], rule_id=band["rule_id"]
+    ), None
 
 
 def _score_category(field: str, spec: dict[str, Any], value: Any):
@@ -104,7 +111,12 @@ def _score_category(field: str, spec: dict[str, Any], value: Any):
     for entry in spec["values"]:
         if entry["value"] == wanted and type(entry["value"]) is type(wanted):
             return (
-                ParameterScore(field=field, value=wanted, score=entry["score"], rule_id=entry["rule_id"]),
+                ParameterScore(
+                    field=field,
+                    value=wanted,
+                    score=entry["score"],
+                    rule_id=entry["rule_id"],
+                ),
                 None,
             )
     return None, UnscorableIssue(

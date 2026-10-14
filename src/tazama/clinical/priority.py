@@ -20,7 +20,10 @@ from tazama.clinical.tews import TEWSResult, load_protocol, score_tews
 from tazama.mcp.contracts import PatientObservations
 
 DEFAULT_DISCRIMINATORS_PATH = (
-    Path(__file__).resolve().parents[3] / "data" / "protocol" / "discriminators_adult.json"
+    Path(__file__).resolve().parents[3]
+    / "data"
+    / "protocol"
+    / "discriminators_adult.json"
 )
 
 
@@ -58,7 +61,9 @@ def determine_priority(
     discriminators: dict[str, Any] | None = None,
 ) -> PriorityResult:
     tews_protocol = tews_protocol if tews_protocol is not None else load_protocol()
-    discriminators = discriminators if discriminators is not None else load_discriminators()
+    discriminators = (
+        discriminators if discriminators is not None else load_discriminators()
+    )
 
     order = [band["priority"] for band in tews_protocol["bands"]]
     top = len(order) - 1
@@ -124,5 +129,7 @@ def determine_priority(
 
     reasons = [_tews_reason(tews)]
     if sign_rank is not None:
-        return build("minimum_only", at_least=order[sign_rank], matched=matched, reasons=reasons)
+        return build(
+            "minimum_only", at_least=order[sign_rank], matched=matched, reasons=reasons
+        )
     return build("abstained", reasons=reasons)
