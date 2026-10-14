@@ -57,7 +57,7 @@ class ReviewRepository:
                 CREATE TABLE IF NOT EXISTS review_requests (
                     request_id TEXT PRIMARY KEY,
                     case_id TEXT NOT NULL CHECK(length(trim(case_id)) > 0),
-                    observation_id TEXT NOT NULL
+                    observation_id TEXT NOT NULL UNIQUE
                         REFERENCES observations(observation_id),
                     status TEXT NOT NULL DEFAULT 'pending'
                         CHECK(status = 'pending'),
@@ -65,6 +65,13 @@ class ReviewRepository:
                     comparison_status TEXT NOT NULL,
                     evidence_json TEXT NOT NULL CHECK(json_valid(evidence_json))
                 )
+                """
+            )
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    idx_review_requests_observation
+                ON review_requests(observation_id)
                 """
             )
             connection.execute(
@@ -138,6 +145,33 @@ class ReviewRepository:
 
             if observation is None or observation[0] != request.case_id:
                 raise ValueError("Observation does not belong to the case")
+
+            existing = connection.execute(
+                """
+                SELECT request_id, case_id, observation_id, status,
+                       created_at, comparison_status, evidence_json
+                FROM review_requests
+                WHERE observation_id = ?
+                """,
+                (request.observation_id,),
+            ).fetchone()
+
+            if existing is not None:
+                if (
+                    existing[5] != request.comparison_status
+                    or json.loads(existing[6]) != request.evidence
+                ):
+                    raise ValueError("Review already exists with different evidence")
+
+                return ReviewRequest(
+                    request_id=existing[0],
+                    case_id=existing[1],
+                    observation_id=existing[2],
+                    status=existing[3],
+                    created_at=datetime.fromisoformat(existing[4]),
+                    comparison_status=existing[5],
+                    evidence=json.loads(existing[6]),
+                )
 
             try:
                 connection.execute(

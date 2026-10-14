@@ -91,13 +91,39 @@ def test_review_audit_is_immutable(setup):
         )
 
 
-def test_multiple_requests_are_visible_in_queue(setup):
-    _, reviews = setup
+def test_duplicate_submission_returns_existing_request(setup):
+    database, reviews = setup
+
+    first = reviews.submit(request())
+    second = reviews.submit(request())
+
+    assert first.request_id == second.request_id
+    assert len(reviews.get_pending()) == 1
+
+    with database.connect() as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert count == 1
+
+
+def test_conflicting_retry_is_rejected(setup):
+    database, reviews = setup
 
     reviews.submit(request())
-    reviews.submit(request())
 
-    assert len(reviews.get_pending()) == 2
+    with pytest.raises(ValueError, match="different evidence"):
+        reviews.submit(request(evidence={"reason": "Changed evidence"}))
+
+    assert len(reviews.get_pending()) == 1
+
+    with database.connect() as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert count == 1
 
 
 def test_reinitialization_preserves_review_requests(setup):
@@ -106,3 +132,35 @@ def test_reinitialization_preserves_review_requests(setup):
 
     reviews.initialize()
     assert len(ReviewRepository(database).get_pending()) == 1
+
+
+def test_existing_database_receives_unique_index(setup):
+    database, reviews = setup
+    reviews.initialize()
+
+    with database.connect() as connection:
+        indexes = connection.execute("PRAGMA index_list('review_requests')").fetchall()
+
+    assert any(
+        row[1] == "idx_review_requests_observation" and row[2] == 1 for row in indexes
+    )
+
+
+def test_retry_does_not_replace_original_actor(setup):
+    database, reviews = setup
+
+    first = reviews.submit(request(actor_id="AGENT-1"))
+    second = reviews.submit(request(actor_id="AGENT-2"))
+
+    assert first.request_id == second.request_id
+
+    with database.connect() as connection:
+        actors = connection.execute(
+            """
+            SELECT actor_id FROM review_request_events
+            WHERE request_id = ?
+            """,
+            (first.request_id,),
+        ).fetchall()
+
+    assert actors == [("AGENT-1",)]
