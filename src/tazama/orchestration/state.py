@@ -9,7 +9,16 @@ WorkflowStatus = Literal[
 ]
 
 
-class TriageWorkflowState(TypedDict):
+class TimelineFields(TypedDict, total=False):
+    """Optional metadata retrieved from SQLite."""
+
+    observation_count: int
+    has_baseline: bool
+    has_rechecks: bool
+    latest_observation_id: str | None
+
+
+class TriageWorkflowState(TimelineFields):
     """State shared between deterministic LangGraph nodes."""
 
     case_id: str
