@@ -1,5 +1,6 @@
-
 # Tazama
+
+*Tazama tena*: "look again". A second look for the waiting room.
 
 A human-supervised agentic clinical triage research prototype for the Agentic AI for Africa Healthcare Challenge.
 
@@ -34,7 +35,24 @@ Run tests:
 uv run pytest
 ```
 
-## Team responsibilities
+## Licensing
 
-- Denis: LangGraph, MCP, local LLM, audit and clinician review workflow.
-- Daud: clinical evidence, SATS specification, scoring verification and evaluation cases.
+This repository contains two separately licensed works.
+
+| Part | Licence |
+| --- | --- |
+| Source code (`src/`, `tests/`) | Apache-2.0 |
+| SATS protocol data (`data/protocol/`) | CC BY-NC-SA 3.0 |
+
+The clinical thresholds are not written in the code or in any prompt. They are read at run time
+from a data file under `data/protocol/`.
+
+That data file is transcribed by hand from the Adult SATS Chart published by the Emergency
+Medicine Society of South Africa (EMSSA). The chart is licensed CC BY-NC-SA 3.0, which is not an
+OSI-approved licence, so the data file is kept apart from the code and keeps its own licence.
+
+- Source: Adult SATS Chart (Adult-SATS-2015.pdf), EMSSA.
+- Licence: https://creativecommons.org/licenses/by-nc-sa/3.0/
+- Changes: values transcribed into JSON; parameter names adapted to the Tazama contract. No
+  thresholds were altered.
+- The data file is for non-commercial use and any adaptation must be shared under the same licence.
