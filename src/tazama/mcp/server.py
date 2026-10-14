@@ -1,5 +1,7 @@
 """Local MCP server for deterministic Tazama tools."""
 
+import os
+
 from mcp.server.fastmcp import FastMCP
 
 from tazama.clinical.history import (
@@ -22,6 +24,12 @@ from tazama.mcp.contracts import (
 )
 from tazama.mcp.validation import (
     validate_observations as validate_observations_core,
+)
+from tazama.storage.database import Database
+from tazama.storage.reviews import (
+    ReviewRepository,
+    ReviewRequest,
+    SubmitReviewRequest,
 )
 
 mcp = FastMCP("Tazama Clinical Tools")
@@ -49,6 +57,20 @@ def compare_with_history(
 ) -> CompareHistoryResult:
     """Report differences between earlier and new readings; not a clinical judgement."""
     return compare_with_history_core(request)
+
+
+@mcp.tool()
+def submit_review_request(request: SubmitReviewRequest) -> ReviewRequest:
+    """Persist a review request; never approve or change clinical priority."""
+    database_path = os.environ.get("TAZAMA_DB_PATH")
+
+    if not database_path:
+        raise ValueError("TAZAMA_DB_PATH is required for review submission")
+
+    database = Database(database_path)
+    repository = ReviewRepository(database)
+    repository.initialize()
+    return repository.submit(request)
 
 
 def main() -> None:
