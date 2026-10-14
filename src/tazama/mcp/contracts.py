@@ -14,6 +14,8 @@ class PatientObservations(BaseModel):
     temperature_c: float | None = None
     spo2_percent: float | None = None
     consciousness: str | None = None
+    mobility: str | None = None  # walking | with_help | stretcher_immobile
+    trauma: bool | None = None
 
 
 class ValidateObservationsRequest(BaseModel):

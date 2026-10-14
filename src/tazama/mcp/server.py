@@ -2,6 +2,13 @@
 
 from mcp.server.fastmcp import FastMCP
 
+from tazama.clinical.history import (
+    CompareHistoryRequest,
+    CompareHistoryResult,
+)
+from tazama.clinical.history import (
+    compare_with_history as compare_with_history_core,
+)
 from tazama.clinical.scoring import (
     CalculateSATSRequest,
     UnavailableSATSResult,
@@ -34,6 +41,14 @@ def calculate_sats(
 ) -> UnavailableSATSResult:
     """Return unavailable until a verified SATS scoring engine is installed."""
     return calculate_sats_core(request)
+
+
+@mcp.tool()
+def compare_with_history(
+    request: CompareHistoryRequest,
+) -> CompareHistoryResult:
+    """Report differences between earlier and new readings; not a clinical judgement."""
+    return compare_with_history_core(request)
 
 
 def main() -> None:
