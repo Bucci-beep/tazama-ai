@@ -35,6 +35,38 @@ Run tests:
 uv run pytest
 ```
 
+## Read-only API
+
+The API exposes persisted synthetic observations without scoring, interpretation, workflow
+execution, or database writes:
+
+```text
+GET /api/v1/health
+GET /api/v1/cases/{case_id}/observations
+```
+
+Configure the same existing SQLite file used by the backend, then start the service:
+
+```bash
+export TAZAMA_DB_PATH=/absolute/path/to/tazama.sqlite3
+uv run uvicorn tazama.api.app:app --reload
+```
+
+The service does not initialize or migrate the database. A missing configuration, missing file,
+invalid SQLite file, or database without the observations schema returns HTTP 503. A valid case
+with no persisted observations returns HTTP 404.
+
+The observation response contains the case ID and chronological `ObservationRecord` values,
+including timestamps and structured measurements. It contains no demographics, computed
+priority, diagnosis, or inferred clinical status.
+
+For local Next.js development, set the dashboard's server-side API base URL to
+`http://127.0.0.1:8000` and request
+`/api/v1/cases/<encoded-case-id>/observations`. Handle 404 as “no observations recorded” and 503
+as backend configuration/storage unavailable. Browser CORS is intentionally not enabled; use a
+Next.js server component or same-origin proxy. No authentication is implemented, so the service
+must only be used with synthetic data in a trusted development environment.
+
 ## Licensing
 
 This repository contains two separately licensed works.
