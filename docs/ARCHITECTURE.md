@@ -32,19 +32,23 @@ real patient care decisions.
 ### SATS scoring boundary
 
 - Deterministic scoring interface
-- Verified SATS protocol not yet integrated
-- Returns an explicit unavailable result
-- Never assigns a clinical priority
-- Directs the case toward human clinical assessment
+- Protocol-driven TEWS and priority calculation through MCP
+- Nurse-assessed signs are explicit input; `None` means not assessed
+- Returns `minimum_only` or abstains when evidence is incomplete
+- Produces a proposal for review and never changes a clinical priority
 
 ### MCP integration
 
 - MCP SDK 1.x
 - stdio transport
 - Local subprocess communication
-- Two registered tools:
+- Registered tools:
   - validate_observations
   - calculate_sats
+  - compare_with_history
+  - determine_priority
+  - submit_review_request
+  - record_demo_attestation
 
 ### Testing
 
@@ -52,32 +56,34 @@ real patient care decisions.
 - Clinical safety boundary tests
 - Real MCP client/server integration tests
 
-## Planned components
-
 ### Review workflow
 
 - submit_review_request MCP tool
 - Persistent review requests
 - Idempotency protection
 - Audit events
-- Explicit human approval boundary
+- Append-only, demo-only attestation with an asserted identity
+- No authenticated approval or queue mutation
 
 ### LangGraph orchestration
 
 - Typed workflow state
 - Conditional routing
 - Controlled MCP tool invocation
-- Human-in-the-loop interruption and resumption
+- Calls history comparison and deterministic priority tools before persisting review evidence
+- Treats MCP failures as unavailable evidence, never as a negative clinical finding
 
 ### Local LLM
 
 - Ollama
-- Local model for explanations
-- No independent clinical scoring authority
+- Optional local model selects relevant statements from a fixed, pre-approved explanation set
+- Structured output is validated and selections outside the grounded set are rejected
+- Model failure does not alter deterministic evidence or prevent human review
+- The synthetic command uses `llama3.2:3b` by default; runtime/model availability is external
 
 ### Evidence and evaluation
 
-- Verified SATS protocol and provenance
+- Protocol data and provenance
 - Synthetic clinical scenarios
 - Safety and failure-mode evaluation
 - Human review of clinical assumptions
@@ -107,3 +113,6 @@ This implementation is a research demonstration.
 No real patient information may be entered into the prototype.
 
 No production clinical deployment is authorised.
+
+The demo clinician identifier is asserted input only. Real-world approval remains blocked on
+authentication, authorisation, clinical governance, and clinical validation.

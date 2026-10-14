@@ -78,8 +78,8 @@ clinician reviewing the design. It should not be a model guessing from text.
 
 ## Not covered
 
-- The language-model agent: tool choice, recovery from bad data and run-to-run variation. These
-  need the agent loop and are not measured here.
+- The bounded Ollama explanation-selection task is covered by contract tests, but model quality,
+  runtime availability and run-to-run behavior are not clinical validation.
 - Real patients, real clinical accuracy, or any claim of efficacy.
 - Slow drift inside a single TEWS band (for example heart rate rising from 60 to 98, which
   stays at score 0). History comparison reports the difference, but nothing raises a flag.
