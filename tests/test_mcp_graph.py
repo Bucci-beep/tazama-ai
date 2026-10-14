@@ -25,7 +25,15 @@ def make_timeline(count: int) -> PatientTimeline:
                 recorded_at=datetime(2026, 10, 14, 8, tzinfo=UTC)
                 + timedelta(minutes=index * 10),
                 observation_type="baseline" if index == 0 else "recheck",
-                observations=PatientObservations(heart_rate_bpm=float(80 + index * 10)),
+                observations=PatientObservations(
+                    heart_rate_bpm=float(80 + index * 10),
+                    respiratory_rate_bpm=12.0,
+                    systolic_bp_mmhg=120.0,
+                    temperature_c=37.0,
+                    consciousness="alert",
+                    mobility="walking",
+                    trauma=False,
+                ),
             )
         )
 
@@ -117,6 +125,28 @@ async def test_history_failure_still_requests_review():
 
 
 @pytest.mark.asyncio
+async def test_priority_failure_is_persisted_as_unavailable_not_negative():
+    async def broken_priority(request):
+        raise RuntimeError("Priority MCP unavailable")
+
+    received = []
+
+    async def review(request):
+        received.append(request)
+        return await fake_review(request)
+
+    graph = build_mcp_triage_graph(
+        repository_for(2), fake_history, review, broken_priority
+    )
+    result = await graph.ainvoke(initial_state())
+
+    assert result["priority_status"] == "tool_unavailable"
+    assert result["priority_result"] is None
+    assert received[0].evidence["priority_error"] == "MCP_PRIORITY_TOOL_UNAVAILABLE"
+    assert result["status"] == "awaiting_clinician_review"
+
+
+@pytest.mark.asyncio
 async def test_invalid_case_never_queries_repository_or_mcp():
     repository = repository_for(2)
 
@@ -199,6 +229,9 @@ async def test_real_mcp_history_and_review_submission(tmp_path):
 
     assert first["comparison_status"] == "differences_found"
     assert first["comparison_error"] is None
+    assert first["priority_status"] == "minimum_only"
+    assert first["priority_result"]["priority"] is None
+    assert first["priority_result"]["priority_at_least"] == "routine"
     assert first["status"] == "awaiting_clinician_review"
     assert first["review_submission_status"] == "persisted"
     assert first["review_request_id"] == second["review_request_id"]

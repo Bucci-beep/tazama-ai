@@ -7,11 +7,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from tazama.mcp.contracts import PatientObservations
+from tazama.orchestration.explanation import explain_evidence_with_ollama
 from tazama.orchestration.mcp_graph import build_mcp_triage_graph
+from tazama.orchestration.mcp_review import attest_review_via_mcp
 from tazama.patients.models import ObservationRecord
 from tazama.storage.database import Database
 from tazama.storage.observations import ObservationRepository
-from tazama.storage.reviews import ReviewRepository
+from tazama.storage.reviews import ReviewRepository, SubmitAttestation
 
 CASE_ID = "SYNTHETIC-DEMO-001"
 
@@ -35,12 +37,20 @@ def seed_observations(repository: ObservationRepository) -> None:
                 case_id=CASE_ID,
                 observation_type=observation_type,
                 recorded_at=timestamp,
-                observations=PatientObservations(heart_rate_bpm=heart_rate),
+                observations=PatientObservations(
+                    heart_rate_bpm=heart_rate,
+                    respiratory_rate_bpm=12.0,
+                    systolic_bp_mmhg=120.0,
+                    temperature_c=37.0,
+                    consciousness="alert",
+                    mobility="walking",
+                    trauma=False,
+                ),
             )
         )
 
 
-async def run_demo(database_path: Path) -> dict:
+async def run_demo(database_path: Path, explanation_tool=None) -> dict:
     """Run the real workflow twice and inspect its persisted records."""
     database = Database(database_path)
     database.initialize()
@@ -48,7 +58,7 @@ async def run_demo(database_path: Path) -> dict:
     observations = ObservationRepository(database)
     seed_observations(observations)
 
-    graph = build_mcp_triage_graph(observations)
+    graph = build_mcp_triage_graph(observations, explanation_tool=explanation_tool)
 
     initial_state = {
         "case_id": CASE_ID,
@@ -59,7 +69,16 @@ async def run_demo(database_path: Path) -> dict:
     first = await graph.ainvoke(initial_state)
     second = await graph.ainvoke(initial_state)
 
-    reviews = ReviewRepository(database).get_pending()
+    review_repository = ReviewRepository(database)
+    reviews = review_repository.get_pending()
+    attestation = await attest_review_via_mcp(
+        SubmitAttestation(
+            request_id=first["review_request_id"],
+            clinician_id="DEMO-CLINICIAN-001",
+            action="approved",
+        ),
+        database_path,
+    )
 
     with database.connect() as connection:
         audit_events = connection.execute(
@@ -69,6 +88,12 @@ async def run_demo(database_path: Path) -> dict:
             ORDER BY occurred_at, event_id
             """
         ).fetchall()
+        persisted_priority = json.loads(
+            connection.execute(
+                "SELECT evidence_json FROM review_requests WHERE request_id = ?",
+                (first["review_request_id"],),
+            ).fetchone()[0]
+        )["priority_result"]
 
     summary = {
         "case_id": CASE_ID,
@@ -76,6 +101,9 @@ async def run_demo(database_path: Path) -> dict:
         "observation_count": first["observation_count"],
         "comparison_status": first["comparison_status"],
         "comparison_result": first["comparison_result"],
+        "priority_result": persisted_priority,
+        "explanation": first["explanation"],
+        "explanation_error": first["explanation_error"],
         "workflow_status": first["status"],
         "review_submission_status": first["review_submission_status"],
         "review_request_id": first["review_request_id"],
@@ -92,7 +120,13 @@ async def run_demo(database_path: Path) -> dict:
             for action, actor_id, request_id in audit_events
         ],
         "priority_changed": False,
-        "clinician_approval_performed": False,
+        "priority_change_basis": "No priority mutation operation exists",
+        "clinician_attestation": {
+            "action": attestation.action,
+            "clinician_id": attestation.clinician_id,
+            "identity_assurance": attestation.identity_assurance,
+            "request_id": attestation.request_id,
+        },
     }
 
     if (
@@ -103,6 +137,7 @@ async def run_demo(database_path: Path) -> dict:
         or len(reviews) != 1
         or len(audit_events) != 1
         or audit_events[0][0] != "review.requested"
+        or attestation.request_id != first["review_request_id"]
     ):
         raise RuntimeError("Synthetic end-to-end demonstration failed")
 
@@ -112,7 +147,12 @@ async def run_demo(database_path: Path) -> dict:
 def main() -> None:
     """Use a temporary database that is removed after the demonstration."""
     with TemporaryDirectory(prefix="tazama-demo-") as directory:
-        result = asyncio.run(run_demo(Path(directory) / "demo.sqlite3"))
+        result = asyncio.run(
+            run_demo(
+                Path(directory) / "demo.sqlite3",
+                explanation_tool=explain_evidence_with_ollama,
+            )
+        )
         print(json.dumps(result, indent=2))
 
 

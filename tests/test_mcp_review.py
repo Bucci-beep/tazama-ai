@@ -5,11 +5,18 @@ from datetime import UTC, datetime
 import pytest
 
 from tazama.mcp.contracts import PatientObservations
-from tazama.orchestration.mcp_review import submit_review_via_mcp
+from tazama.orchestration.mcp_review import (
+    attest_review_via_mcp,
+    submit_review_via_mcp,
+)
 from tazama.patients.models import ObservationRecord
 from tazama.storage.database import Database
 from tazama.storage.observations import ObservationRepository
-from tazama.storage.reviews import ReviewRepository, SubmitReviewRequest
+from tazama.storage.reviews import (
+    ReviewRepository,
+    SubmitAttestation,
+    SubmitReviewRequest,
+)
 
 
 @pytest.fixture
@@ -79,6 +86,24 @@ async def test_mcp_retry_returns_existing_request(prepared_database):
         ).fetchone()[0]
 
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_mcp_records_idempotent_demo_attestation(prepared_database):
+    path, database = prepared_database
+    review = await submit_review_via_mcp(review_request(), path)
+    command = SubmitAttestation(
+        request_id=review.request_id,
+        clinician_id="DEMO-CLINICIAN-1",
+        action="approved",
+    )
+
+    first = await attest_review_via_mcp(command, path)
+    second = await attest_review_via_mcp(command, path)
+
+    assert first.event_id == second.event_id
+    assert first.identity_assurance == "asserted_demo_identity"
+    assert ReviewRepository(database).get_pending()[0].request_id == review.request_id
 
 
 @pytest.mark.asyncio

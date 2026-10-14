@@ -8,7 +8,12 @@ from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from tazama.storage.reviews import ReviewRequest, SubmitReviewRequest
+from tazama.storage.reviews import (
+    ReviewAttestation,
+    ReviewRequest,
+    SubmitAttestation,
+    SubmitReviewRequest,
+)
 
 
 async def submit_review_via_mcp(
@@ -71,3 +76,37 @@ async def submit_review_via_mcp(
         raise RuntimeError("MCP_REVIEW_RESPONSE_MISMATCH")
 
     return result
+
+
+async def attest_review_via_mcp(
+    request: SubmitAttestation,
+    database_path: str | Path,
+) -> ReviewAttestation:
+    """Record an asserted demo identity through the real MCP transport."""
+    path = Path(database_path).expanduser().resolve()
+    if not path.is_file():
+        raise ValueError("The configured SQLite database does not exist")
+    server = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "tazama.mcp.server"],
+        env={**os.environ, "TAZAMA_DB_PATH": str(path)},
+    )
+    async with (
+        stdio_client(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        response = await session.call_tool(
+            "record_demo_attestation",
+            arguments={"request": request.model_dump(mode="json")},
+        )
+    if response.isError:
+        raise RuntimeError("MCP_REVIEW_ATTESTATION_FAILED")
+    payload = response.structuredContent
+    if payload is None:
+        if not response.content or response.content[0].type != "text":
+            raise RuntimeError("MCP_REVIEW_ATTESTATION_RESPONSE_EMPTY")
+        payload = json.loads(response.content[0].text)
+    if isinstance(payload, dict) and "result" in payload:
+        payload = payload["result"]
+    return ReviewAttestation.model_validate_json(json.dumps(payload))

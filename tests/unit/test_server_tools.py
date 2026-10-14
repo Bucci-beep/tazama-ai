@@ -8,5 +8,6 @@ def test_server_exposes_expected_tools():
     assert {
         "validate_observations",
         "calculate_sats",
+        "record_demo_attestation",
         "compare_with_history",
     } <= names

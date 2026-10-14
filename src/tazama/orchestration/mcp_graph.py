@@ -6,7 +6,10 @@ from typing import Literal
 from langgraph.graph import END, START, StateGraph
 
 from tazama.clinical.history import CompareHistoryRequest, CompareHistoryResult
+from tazama.clinical.priority import PriorityResult
+from tazama.mcp.priority_contract import DeterminePriorityRequest
 from tazama.orchestration.mcp_history import compare_history_via_mcp
+from tazama.orchestration.mcp_priority import determine_priority_via_mcp
 from tazama.orchestration.mcp_review import submit_review_via_mcp
 from tazama.orchestration.state import TriageWorkflowState
 from tazama.patients.history_adapter import to_history_request
@@ -22,12 +25,20 @@ ReviewTool = Callable[
     [SubmitReviewRequest],
     Awaitable[ReviewRequest],
 ]
+PriorityTool = Callable[[DeterminePriorityRequest], Awaitable[PriorityResult]]
+ExplanationTool = Callable[[dict], Awaitable[dict]]
 
 
 class MCPWorkflowState(TriageWorkflowState, total=False):
+    signs: list[str] | None
     comparison_status: str | None
     comparison_result: dict | None
     comparison_error: str | None
+    priority_status: str | None
+    priority_result: dict | None
+    priority_error: str | None
+    explanation: dict | None
+    explanation_error: str | None
     review_submission_status: str | None
     review_request_id: str | None
     review_submission_error: str | None
@@ -47,6 +58,8 @@ def build_mcp_triage_graph(
     repository: ObservationRepository,
     history_tool: HistoryTool = compare_history_via_mcp,
     review_tool: ReviewTool | None = None,
+    priority_tool: PriorityTool = determine_priority_via_mcp,
+    explanation_tool: ExplanationTool | None = None,
 ):
     """Compile an async graph that confirms review persistence via MCP."""
 
@@ -121,11 +134,65 @@ def build_mcp_triage_graph(
     ) -> Literal["submit", "missing"]:
         return "submit" if state.get("latest_observation_id") else "missing"
 
+    async def assess_priority(state: MCPWorkflowState) -> dict:
+        timeline = repository.get_timeline(state["case_id"])
+        latest = timeline.latest()
+        if latest is None:
+            return {
+                "priority_status": "unavailable",
+                "priority_result": None,
+                "priority_error": "OBSERVATION_MISSING",
+            }
+        request = DeterminePriorityRequest(
+            case_id=state["case_id"],
+            observations=latest.observations,
+            signs=state.get("signs"),
+        )
+        try:
+            result = await priority_tool(request)
+        except Exception:  # noqa: BLE001
+            return {
+                "priority_status": "tool_unavailable",
+                "priority_result": None,
+                "priority_error": "MCP_PRIORITY_TOOL_UNAVAILABLE",
+            }
+        return {
+            "priority_status": result.status,
+            "priority_result": result.model_dump(mode="json"),
+            "priority_error": None,
+        }
+
+    async def explain_evidence(state: MCPWorkflowState) -> dict:
+        if explanation_tool is None:
+            return {"explanation": None, "explanation_error": "NOT_CONFIGURED"}
+        evidence = {
+            "comparison_status": state.get("comparison_status"),
+            "comparison_result": state.get("comparison_result"),
+            "comparison_error": state.get("comparison_error"),
+            "priority_status": state.get("priority_status"),
+            "priority_result": state.get("priority_result"),
+            "priority_error": state.get("priority_error"),
+        }
+        try:
+            return {
+                "explanation": await explanation_tool(evidence),
+                "explanation_error": None,
+            }
+        except Exception:  # noqa: BLE001
+            return {
+                "explanation": None,
+                "explanation_error": "OLLAMA_EXPLANATION_UNAVAILABLE",
+            }
+
     async def submit_review(state: MCPWorkflowState) -> dict:
         evidence = {
             "comparison_status": state["comparison_status"],
             "comparison_result": state.get("comparison_result"),
             "comparison_error": state.get("comparison_error"),
+            "priority_status": state.get("priority_status"),
+            "priority_result": state.get("priority_result"),
+            "priority_error": state.get("priority_error"),
+            "signs_assessed": state.get("signs") is not None,
         }
 
         request = SubmitReviewRequest(
@@ -205,6 +272,8 @@ def build_mcp_triage_graph(
 
     builder.add_node("validate_input", validate_input)
     builder.add_node("load_and_compare", load_and_compare)
+    builder.add_node("assess_priority", assess_priority)
+    builder.add_node("explain_evidence", explain_evidence)
     builder.add_node("submit_review", submit_review)
     builder.add_node("await_clinician_review", await_review)
     builder.add_node("submission_failed", submission_failed)
@@ -220,13 +289,15 @@ def build_mcp_triage_graph(
     builder.add_conditional_edges(
         "load_and_compare",
         route_observation,
-        {"submit": "submit_review", "missing": "missing_observation"},
+        {"submit": "assess_priority", "missing": "missing_observation"},
     )
+    builder.add_edge("assess_priority", "submit_review")
     builder.add_conditional_edges(
         "submit_review",
         route_submission,
-        {"confirmed": "await_clinician_review", "failed": "submission_failed"},
+        {"confirmed": "explain_evidence", "failed": "submission_failed"},
     )
+    builder.add_edge("explain_evidence", "await_clinician_review")
     builder.add_edge("await_clinician_review", END)
     builder.add_edge("submission_failed", END)
     builder.add_edge("missing_observation", END)

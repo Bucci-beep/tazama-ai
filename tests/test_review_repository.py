@@ -9,7 +9,11 @@ from tazama.mcp.contracts import PatientObservations
 from tazama.patients.models import ObservationRecord
 from tazama.storage.database import Database
 from tazama.storage.observations import ObservationRepository
-from tazama.storage.reviews import ReviewRepository, SubmitReviewRequest
+from tazama.storage.reviews import (
+    ReviewRepository,
+    SubmitAttestation,
+    SubmitReviewRequest,
+)
 
 
 @pytest.fixture
@@ -164,3 +168,56 @@ def test_retry_does_not_replace_original_actor(setup):
         ).fetchall()
 
     assert actors == [("AGENT-1",)]
+
+
+def test_demo_attestation_is_idempotent_and_keeps_review_pending(setup):
+    database, reviews = setup
+    review = reviews.submit(request())
+    command = SubmitAttestation(
+        request_id=review.request_id,
+        clinician_id="DEMO-CLINICIAN-1",
+        action="approved",
+    )
+
+    first = reviews.attest(command)
+    second = reviews.attest(command)
+
+    assert first.event_id == second.event_id
+    assert reviews.get_pending()[0].request_id == review.request_id
+    with database.connect() as connection:
+        assert (
+            connection.execute("SELECT COUNT(*) FROM review_attestations").fetchone()[0]
+            == 1
+        )
+
+
+def test_demo_attestation_rejects_invalid_reference(setup):
+    _, reviews = setup
+    with pytest.raises(ValueError, match="not found"):
+        reviews.attest(
+            SubmitAttestation(
+                request_id="MISSING",
+                clinician_id="DEMO-CLINICIAN-1",
+                action="approved",
+            )
+        )
+
+
+def test_demo_attestation_rejects_conflict_and_is_immutable(setup):
+    database, reviews = setup
+    review = reviews.submit(request())
+    approved = SubmitAttestation(
+        request_id=review.request_id,
+        clinician_id="DEMO-CLINICIAN-1",
+        action="approved",
+    )
+    event = reviews.attest(approved)
+
+    with pytest.raises(ValueError, match="conflicting"):
+        reviews.attest(approved.model_copy(update={"action": "rejected"}))
+
+    with pytest.raises(sqlite3.DatabaseError), database.connect() as connection:
+        connection.execute(
+            "UPDATE review_attestations SET action = 'rejected' WHERE event_id = ?",
+            (event.event_id,),
+        )
