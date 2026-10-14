@@ -1,3 +1,4 @@
+import { SafetyNotice } from "@/components/dashboard/safety-notice";
 import {
   Activity,
   ArrowUpRight,
@@ -6,7 +7,6 @@ import {
   FileClock,
   HeartPulse,
   LockKeyhole,
-  ShieldCheck,
 } from "lucide-react";
 
 const capabilities = [
@@ -90,21 +90,7 @@ export default function Home() {
               </p>
             </div>
 
-            <section className="mt-9 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-              <div className="flex gap-3">
-                <ShieldCheck className="shrink-0 text-amber-800" size={22} />
-                <div>
-                  <h2 className="font-semibold text-amber-950">
-                    Clinical safety boundary
-                  </h2>
-                  <p className="mt-1 text-sm leading-6 text-amber-900">
-                    This is an unvalidated research prototype. It must not
-                    be used for patient care, diagnosis, treatment, or
-                    autonomous triage decisions.
-                  </p>
-                </div>
-              </div>
-            </section>
+            <SafetyNotice />
 
             <section className="mt-12">
               <h2 className="text-xl font-semibold">System capabilities</h2>
