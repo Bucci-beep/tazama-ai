@@ -9,6 +9,12 @@ from tazama.clinical.history import (
 from tazama.clinical.history import (
     compare_with_history as compare_with_history_core,
 )
+from tazama.clinical.priority import (
+    PriorityResult,
+)
+from tazama.clinical.priority import (
+    determine_priority as determine_priority_core,
+)
 from tazama.clinical.scoring import (
     CalculateSATSRequest,
     ScoredSATSResult,
@@ -21,6 +27,7 @@ from tazama.mcp.contracts import (
     ValidateObservationsRequest,
     ValidateObservationsResponse,
 )
+from tazama.mcp.priority_contract import DeterminePriorityRequest
 from tazama.mcp.validation import (
     validate_observations as validate_observations_core,
 )
@@ -54,6 +61,20 @@ def compare_with_history(
 ) -> CompareHistoryResult:
     """Report differences between earlier and new readings; not a clinical judgement."""
     return compare_with_history_core(request)
+
+
+@mcp.tool()
+def determine_priority(
+    request: DeterminePriorityRequest,
+) -> PriorityResult:
+    """Combine nurse-identified signs with the TEWS into a SATS priority.
+
+    The final priority is the highest of the sign level and the TEWS band. Signs are given
+    by the nurse; this tool never detects them. If signs are not assessed or the TEWS cannot
+    be calculated, the result is "at least X" or abstained, never a final priority. This
+    tool proposes only; a named nurse must approve any outcome.
+    """
+    return determine_priority_core(request.observations, request.signs)
 
 
 def main() -> None:
