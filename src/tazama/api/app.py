@@ -1,6 +1,7 @@
-"""Read-only FastAPI service for persisted synthetic observations."""
+"""Read-only HTTP API for persisted synthetic Tazama observations."""
 
 import sqlite3
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, ConfigDict
@@ -10,35 +11,41 @@ from tazama.patients.models import ObservationRecord
 
 
 class HealthResponse(BaseModel):
-    status: str = "ok"
-    service: str = "tazama-api"
-    synthetic_data_only: bool = True
-    clinical_use_permitted: bool = False
+    """Availability of the HTTP service, not clinical readiness."""
+
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["ok"]
+    service: Literal["tazama-api"]
+    environment: Literal["synthetic-research"]
+    clinical_use_permitted: Literal[False]
 
 
 class ObservationTimelineResponse(BaseModel):
     """Chronological persisted observations without clinical interpretation."""
 
     model_config = ConfigDict(extra="forbid")
-
     case_id: str
     records: list[ObservationRecord]
 
 
 app = FastAPI(
-    title="Tazama Read-Only API",
-    description=(
-        "Read-only access to persisted synthetic research data. "
-        "Not clinically validated or permitted for clinical use."
-    ),
+    title="Tazama Research API",
     version="1.0.0",
+    description=(
+        "Read-only local research API. Not clinically validated. Synthetic data only."
+    ),
 )
 
 
 @app.get("/api/v1/health", response_model=HealthResponse)
-def health() -> HealthResponse:
-    """Report service status and the synthetic-only safety boundary."""
-    return HealthResponse()
+def get_health() -> HealthResponse:
+    """Report HTTP service availability only."""
+    return HealthResponse(
+        status="ok",
+        service="tazama-api",
+        environment="synthetic-research",
+        clinical_use_permitted=False,
+    )
 
 
 @app.get(

@@ -905,17 +905,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi" },
+    { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "langgraph" },
     { name = "mcp", specifier = ">=1,<2" },
     { name = "ollama" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "uvicorn" },
+    { name = "uvicorn", specifier = ">=0.30,<1" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx" },
+    { name = "httpx", specifier = ">=0.27,<1" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },

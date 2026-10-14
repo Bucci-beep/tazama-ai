@@ -1,1 +1,1 @@
-"""Read-only HTTP API for synthetic Tazama data."""
+"""Read-only HTTP interface for the Tazama research prototype."""

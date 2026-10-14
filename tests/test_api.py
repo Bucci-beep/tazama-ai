@@ -55,7 +55,7 @@ def test_health_contract_is_unchanged(client):
     assert response.json() == {
         "status": "ok",
         "service": "tazama-api",
-        "synthetic_data_only": True,
+        "environment": "synthetic-research",
         "clinical_use_permitted": False,
     }
 
