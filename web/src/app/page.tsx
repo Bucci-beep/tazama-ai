@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { BackendStatus } from "@/components/dashboard/backend-status";
+import { CaseObservations } from "@/components/dashboard/case-observations";
 import { SafetyNotice } from "@/components/dashboard/safety-notice";
 import {
   Activity,
@@ -29,7 +30,64 @@ const capabilities = [
   },
 ];
 
-export default function Home() {
+async function CaseLookup({
+  searchParams,
+}: {
+  searchParams: Promise<{ case_id?: string }>;
+}) {
+  const caseId = (await searchParams).case_id?.trim() ?? "";
+
+  return (
+    <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+      <h2 className="text-lg font-semibold">Persisted observations</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-600">
+        Retrieve a synthetic case timeline. Values are recorded evidence only;
+        this view performs no scoring or clinical interpretation.
+      </p>
+      <form className="mt-5 flex flex-col gap-3 sm:flex-row">
+        <label className="sr-only" htmlFor="case-id">
+          Synthetic case identifier
+        </label>
+        <input
+          id="case-id"
+          name="case_id"
+          defaultValue={caseId}
+          placeholder="SYNTHETIC-DEMO-001"
+          required
+          className="min-w-0 flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+        />
+        <button
+          type="submit"
+          className="rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-300"
+        >
+          Load observations
+        </button>
+      </form>
+      {caseId ? (
+        <Suspense
+          key={caseId}
+          fallback={
+            <p role="status" className="mt-5 text-sm text-slate-500">
+              Loading persisted observations...
+            </p>
+          }
+        >
+          <CaseObservations caseId={caseId} />
+        </Suspense>
+      ) : (
+        <p className="mt-5 text-sm text-slate-500">
+          Enter a synthetic case identifier to load its observations.
+        </p>
+      )}
+    </section>
+  );
+}
+
+export default function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ case_id?: string }>;
+}) {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="flex min-h-screen">
@@ -133,6 +191,24 @@ export default function Home() {
               }
             >
               <BackendStatus />
+            </Suspense>
+
+            <Suspense
+              fallback={
+                <section
+                  role="status"
+                  className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8"
+                >
+                  <h2 className="text-lg font-semibold">
+                    Persisted observations
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Preparing case lookup...
+                  </p>
+                </section>
+              }
+            >
+              <CaseLookup searchParams={searchParams} />
             </Suspense>
           </main>
 
