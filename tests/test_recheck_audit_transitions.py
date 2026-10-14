@@ -1,6 +1,5 @@
 """Audit integration tests for reassessment state transitions."""
 
-import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
