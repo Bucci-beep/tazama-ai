@@ -11,8 +11,15 @@ from tazama.clinical.history import (
 from tazama.clinical.history import (
     compare_with_history as compare_with_history_core,
 )
+from tazama.clinical.priority import (
+    PriorityResult,
+)
+from tazama.clinical.priority import (
+    determine_priority as determine_priority_core,
+)
 from tazama.clinical.scoring import (
     CalculateSATSRequest,
+    ScoredSATSResult,
     UnavailableSATSResult,
 )
 from tazama.clinical.scoring import (
@@ -22,6 +29,7 @@ from tazama.mcp.contracts import (
     ValidateObservationsRequest,
     ValidateObservationsResponse,
 )
+from tazama.mcp.priority_contract import DeterminePriorityRequest
 from tazama.mcp.validation import (
     validate_observations as validate_observations_core,
 )
@@ -46,8 +54,12 @@ def validate_observations(
 @mcp.tool()
 def calculate_sats(
     request: CalculateSATSRequest,
-) -> UnavailableSATSResult:
-    """Return unavailable until a verified SATS scoring engine is installed."""
+) -> ScoredSATSResult | UnavailableSATSResult:
+    """Calculate the SATS TEWS from the protocol file, or return unavailable.
+
+    Abstains when any observation is missing or off-chart. Covers the TEWS only; the
+    chart's emergency, very urgent and urgent signs are not applied.
+    """
     return calculate_sats_core(request)
 
 
@@ -71,6 +83,19 @@ def submit_review_request(request: SubmitReviewRequest) -> ReviewRequest:
     repository = ReviewRepository(database)
     repository.initialize()
     return repository.submit(request)
+
+
+@mcp.tool()
+def determine_priority(
+    request: DeterminePriorityRequest,
+) -> PriorityResult:
+    """Propose SATS priority from nurse-identified signs and TEWS.
+
+    Signs are supplied by a nurse, not detected automatically.
+    Missing or unscorable evidence prevents a definitive priority.
+    The proposal requires clinician approval.
+    """
+    return determine_priority_core(request.observations, request.signs)
 
 
 def main() -> None:
