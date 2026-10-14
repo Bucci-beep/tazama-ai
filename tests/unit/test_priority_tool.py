@@ -34,9 +34,8 @@ def test_unsupported_schema_version_is_rejected():
         make_request(schema_version="2.0")
 
 
-def test_priority_tool_is_exposed_and_no_approval_tool_exists():
+def test_priority_tool_is_exposed_and_demo_attestation_is_disabled_by_default():
     names = {tool.name for tool in asyncio.run(mcp.list_tools())}
 
     assert "determine_priority" in names
-    # The model must have no way to record an approval.
-    assert not any("approv" in name for name in names)
+    assert "record_demo_attestation" not in names

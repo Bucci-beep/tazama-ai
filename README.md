@@ -9,13 +9,17 @@ A human-supervised agentic clinical triage research prototype for the Agentic AI
 - LangGraph coordinates an explicit, auditable workflow.
 - MCP exposes versioned tools with typed contracts.
 - Clinical triage scoring is deterministic and protocol-driven.
-- The local LLM explains evidence but cannot assign clinical priority.
-- Queue updates require explicit clinician approval.
+- An optional local Ollama task selects from pre-approved evidence explanations; it cannot
+  generate clinical claims or assign priority.
+- A demonstration-only attestation records an asserted clinician identifier and disposition.
+  It is not authentication, authorisation, or production clinical sign-off, and it does not
+  update a queue or priority.
 - All demonstration cases use synthetic data.
 
 ## Safety status
 
-The clinical scoring engine has not yet been validated or integrated.
+The deterministic scoring engine is integrated into the MCP/LangGraph review workflow but has
+not been clinically validated.
 
 **Not for clinical use. Do not enter real patient information.**
 
@@ -66,6 +70,18 @@ For local Next.js development, set the dashboard's server-side API base URL to
 as backend configuration/storage unavailable. Browser CORS is intentionally not enabled; use a
 Next.js server component or same-origin proxy. No authentication is implemented, so the service
 must only be used with synthetic data in a trusted development environment.
+
+## Synthetic demonstration
+
+Run the synthetic demonstration (requires a running Ollama service and the configured model,
+default `llama3.2:3b`):
+
+```bash
+uv run python -m tazama.demo
+```
+
+The demo uses synthetic data, leaves the review pending, records a demo identity attestation,
+and never changes clinical priority.
 
 ## Licensing
 
