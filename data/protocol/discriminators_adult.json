@@ -1,0 +1,83 @@
+{
+  "protocol_id": "SATS-ADULT-DISCRIMINATORS",
+  "protocol_version": "2015-chart-1",
+  "applies_to": "Older than 12 years / taller than 150 cm",
+  "attribution": {
+    "title": "Adult SATS Chart (Adult-SATS-2015.pdf)",
+    "publisher": "Emergency Medicine Society of South Africa (EMSSA) / South African Triage Group",
+    "licence": "CC BY-NC-SA 3.0",
+    "licence_url": "https://creativecommons.org/licenses/by-nc-sa/3.0/",
+    "changes": "Sign lists transcribed by hand into JSON, with an id added to each sign. Wording kept as on the chart. No signs were added, removed or merged.",
+    "notice": "This file is a separate work from the Tazama source code. The code is Apache-2.0. This data file is CC BY-NC-SA 3.0 (non-commercial, share-alike)."
+  },
+  "notes": [
+    "These are clinical signs a nurse identifies by looking at and asking the patient. Tazama does not detect them.",
+    "Final SATS priority is the highest of the sign level and the TEWS band. Any emergency sign means take to resus.",
+    "Wording is kept as printed on the chart, including the numbers (for example glucose thresholds in mmol/L)."
+  ],
+  "levels": [
+    {
+      "level": "emergency",
+      "priority": "emergency",
+      "colour": "red",
+      "rank": 4,
+      "signs": [
+        { "sign_id": "DISC/EMERGENCY/NOT_BREATHING", "chart_text": "Not breathing" },
+        { "sign_id": "DISC/EMERGENCY/SEIZURE_CURRENT", "chart_text": "Seizure - current" },
+        { "sign_id": "DISC/EMERGENCY/BURN_FACIAL_INHALATION", "chart_text": "Burn - facial / inhalation" },
+        { "sign_id": "DISC/EMERGENCY/HYPOGLYCAEMIA", "chart_text": "Hypoglycaemia - glucose less than 3" },
+        { "sign_id": "DISC/EMERGENCY/CARDIAC_ARREST", "chart_text": "Cardiac arrest" },
+        { "sign_id": "DISC/EMERGENCY/OBSTRUCTED_AIRWAY", "chart_text": "Obstructed Airway - Not breathing" }
+      ]
+    },
+    {
+      "level": "very_urgent",
+      "priority": "very_urgent",
+      "colour": "orange",
+      "rank": 3,
+      "signs": [
+        { "sign_id": "DISC/VERY_URGENT/REDUCED_CONSCIOUSNESS", "chart_text": "Level of consciousness reduced / confused" },
+        { "sign_id": "DISC/VERY_URGENT/HIGH_ENERGY_TRANSFER", "chart_text": "High energy transfer (severe mechanism of injury)" },
+        { "sign_id": "DISC/VERY_URGENT/SHORTNESS_OF_BREATH_ACUTE", "chart_text": "Shortness of breath - acute" },
+        { "sign_id": "DISC/VERY_URGENT/COUGHING_BLOOD", "chart_text": "Coughing blood" },
+        { "sign_id": "DISC/VERY_URGENT/CHEST_PAIN", "chart_text": "Chest pain" },
+        { "sign_id": "DISC/VERY_URGENT/STABBED_NECK_OR_CHEST", "chart_text": "Stabbed neck OR chest" },
+        { "sign_id": "DISC/VERY_URGENT/HAEMORRHAGE_UNCONTROLLED", "chart_text": "Haemorrhage - uncontrolled (arterial bleed)" },
+        { "sign_id": "DISC/VERY_URGENT/SEIZURE_POST_ICTAL", "chart_text": "Seizure - post ictal" },
+        { "sign_id": "DISC/VERY_URGENT/FOCAL_NEUROLOGY_ACUTE", "chart_text": "Focal neurology - acute (stroke)" },
+        { "sign_id": "DISC/VERY_URGENT/AGGRESSION", "chart_text": "Aggression" },
+        { "sign_id": "DISC/VERY_URGENT/THREATENED_LIMB", "chart_text": "Threatened limb" },
+        { "sign_id": "DISC/VERY_URGENT/DISLOCATION_LARGER_JOINT", "chart_text": "Dislocation of larger joint (not finger or toe)" },
+        { "sign_id": "DISC/VERY_URGENT/FRACTURE_COMPOUND", "chart_text": "Fracture - compound (with a break in skin)" },
+        { "sign_id": "DISC/VERY_URGENT/BURN_OVER_20", "chart_text": "Burn over 20%" },
+        { "sign_id": "DISC/VERY_URGENT/BURN_ELECTRICAL", "chart_text": "Burn - electrical" },
+        { "sign_id": "DISC/VERY_URGENT/BURN_CIRCUMFERENTIAL", "chart_text": "Burn - circumferential" },
+        { "sign_id": "DISC/VERY_URGENT/BURN_CHEMICAL", "chart_text": "Burn - chemical" },
+        { "sign_id": "DISC/VERY_URGENT/POISONING_OVERDOSE", "chart_text": "Poisoning / Overdose" },
+        { "sign_id": "DISC/VERY_URGENT/DIABETIC_GLUCOSE_OVER_11_KETONURIA", "chart_text": "Diabetic - glucose over 11 & ketonuria" },
+        { "sign_id": "DISC/VERY_URGENT/VOMITING_FRESH_BLOOD", "chart_text": "Vomiting fresh blood" },
+        { "sign_id": "DISC/VERY_URGENT/PREGNANCY_ABDOMINAL_TRAUMA", "chart_text": "Pregnancy and abdominal trauma" },
+        { "sign_id": "DISC/VERY_URGENT/PREGNANCY_ABDOMINAL_PAIN", "chart_text": "Pregnancy and abdominal pain" },
+        { "sign_id": "DISC/VERY_URGENT/SEVERE_PAIN", "chart_text": "Severe pain" }
+      ]
+    },
+    {
+      "level": "urgent",
+      "priority": "urgent",
+      "colour": "yellow",
+      "rank": 2,
+      "signs": [
+        { "sign_id": "DISC/URGENT/HAEMORRHAGE_CONTROLLED", "chart_text": "Haemorrhage - controlled" },
+        { "sign_id": "DISC/URGENT/DISLOCATION_FINGER_OR_TOE", "chart_text": "Dislocation of finger OR toe" },
+        { "sign_id": "DISC/URGENT/FRACTURE_CLOSED", "chart_text": "Fracture - closed (no break in skin)" },
+        { "sign_id": "DISC/URGENT/BURN_OTHER", "chart_text": "Burn - other" },
+        { "sign_id": "DISC/URGENT/ABDOMINAL_PAIN", "chart_text": "Abdominal pain" },
+        { "sign_id": "DISC/URGENT/DIABETIC_GLUCOSE_OVER_17", "chart_text": "Diabetic - glucose over 17 (no ketonuria)" },
+        { "sign_id": "DISC/URGENT/VOMITING_PERSISTENTLY", "chart_text": "Vomiting persistently" },
+        { "sign_id": "DISC/URGENT/PREGNANCY_AND_TRAUMA", "chart_text": "Pregnancy and trauma" },
+        { "sign_id": "DISC/URGENT/PREGNANCY_PV_BLEED", "chart_text": "Pregnancy and PV bleed" },
+        { "sign_id": "DISC/URGENT/MODERATE_PAIN", "chart_text": "Moderate pain" }
+      ]
+    }
+  ]
+}
