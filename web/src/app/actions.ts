@@ -7,6 +7,10 @@ import {
   requestCaseReassessment,
   type ReassessmentResponse,
 } from "@/lib/api";
+import {
+  isKnownDiscriminatorId,
+  type SignAssessment,
+} from "@/lib/discriminators";
 
 export type ObservationFormState = {
   status: "idle" | "error";
@@ -19,6 +23,35 @@ export type ReassessmentActionState =
   | { status: "idle"; message: ""; result: null }
   | { status: "error"; message: string; result: null }
   | { status: "success"; message: string; result: ReassessmentResponse };
+
+function parseSignAssessment(formData: FormData): SignAssessment {
+  const mode = formData.get("sign_assessment");
+  const rawSigns = formData.getAll("signs");
+  if (rawSigns.some((value) => typeof value !== "string")) {
+    throw new Error("Invalid clinical sign selection.");
+  }
+  const signs = rawSigns as string[];
+  if (signs.some((sign) => !isKnownDiscriminatorId(sign))) {
+    throw new Error("One or more clinical sign selections are not recognised.");
+  }
+  if (mode === "not_assessed") {
+    if (signs.length) throw new Error("Unassessed signs cannot include selections.");
+    return null;
+  }
+  if (mode === "assessed_none") {
+    if (signs.length) {
+      throw new Error("No-sign assessment cannot include selections.");
+    }
+    return [];
+  }
+  if (mode === "assessed_selected") {
+    if (!signs.length) {
+      throw new Error("Select at least one chart-defined clinical sign.");
+    }
+    return [...new Set(signs)];
+  }
+  throw new Error("Select how clinical signs were assessed.");
+}
 
 export async function requestReassessmentAction(
   _previousState: ReassessmentActionState,
@@ -34,7 +67,19 @@ export async function requestReassessmentAction(
     };
   }
 
-  const response = await requestCaseReassessment(caseId);
+  let signs: SignAssessment;
+  try {
+    signs = parseSignAssessment(formData);
+  } catch (error) {
+    return {
+      status: "error",
+      message:
+        error instanceof Error ? error.message : "Invalid clinical sign selection.",
+      result: null,
+    };
+  }
+
+  const response = await requestCaseReassessment(caseId, signs);
   if (response.status !== "completed") {
     return { status: "error", message: response.reason, result: null };
   }

@@ -154,10 +154,10 @@ edit-priority or queue controls.
 - Integration tests run a real MCP client against the real server over stdio.
 
 ## Known gaps
-- The reassess endpoint does not yet pass nurse-assessed signs to the priority engine, so
-  dashboard results show "at least X" (`minimum_only`) rather than a complete proposal.
-- If a nurse assesses signs after a review request has been created, the new evidence cannot
-  yet be recorded against the same observation (review versioning is not implemented).
+- Review persistence allows only one pending review per observation. A later reassessment with
+  changed nurse-assessed sign evidence is rejected rather than overwriting or versioning the
+  existing review, so signs must be assessed before the first review is submitted. Review
+  versioning is not implemented.
 - The API has no endpoint that lists pending review requests; evidence is returned by the
   reassess response.
 - No overdue-reassessment rule exists. Time is captured as provenance only.

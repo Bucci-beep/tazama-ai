@@ -234,7 +234,9 @@ def test_audit_failure_preserves_successful_mcp_result(repository):
     )
     assert status_code == 200
     assert payload["workflow_provenance"]["time"]["status"] == "captured"
-    assert payload["workflow_provenance"]["time"]["audit_status"] == "persistence_failed"
+    assert (
+        payload["workflow_provenance"]["time"]["audit_status"] == "persistence_failed"
+    )
     assert payload["mcp_audit_errors"] == [
         "get_current_time:MCP_AUDIT_PERSISTENCE_FAILED"
     ]
@@ -244,18 +246,191 @@ def test_real_mcp_workflow_is_idempotent_and_audited(repository):
     seed(repository)
     service = ReassessmentService(repository)
 
-    first_status, first = request_with(
-        service, f"/api/v1/cases/{CASE_ID}/reassess"
-    )
-    second_status, second = request_with(
-        service, f"/api/v1/cases/{CASE_ID}/reassess"
-    )
+    first_status, first = request_with(service, f"/api/v1/cases/{CASE_ID}/reassess")
+    second_status, second = request_with(service, f"/api/v1/cases/{CASE_ID}/reassess")
 
     assert first_status == second_status == 200
     assert first["review_request_id"] == second["review_request_id"]
     assert len(ReviewRepository(repository.database).get_pending()) == 1
-    assert len(
-        MCPToolCallRepository(repository.database).get_by_workflow_run(
-            first["workflow_run_id"]
+    assert (
+        len(
+            MCPToolCallRepository(repository.database).get_by_workflow_run(
+                first["workflow_run_id"]
+            )
         )
-    ) == 4
+        == 4
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_status", "expected_priority", "expected_assessed"),
+    [
+        (None, "minimum_only", None, False),
+        ({"signs": None}, "minimum_only", None, False),
+        ({"signs": []}, "complete", "routine", True),
+    ],
+    ids=["omitted", "explicit-null", "assessed-none-found"],
+)
+def test_reassessment_sign_assessment_contract(
+    repository,
+    body,
+    expected_status,
+    expected_priority,
+    expected_assessed,
+):
+    """Preserve the distinction between unassessed and assessed signs."""
+    seed(repository)
+    submitted = []
+
+    async def capture_review(request):
+        submitted.append(request)
+        return await review(request)
+
+    service = service_for(repository, review_tool=capture_review)
+
+    app.dependency_overrides[get_reassessment_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            if body is None:
+                response = client.post(f"/api/v1/cases/{CASE_ID}/reassess")
+            else:
+                response = client.post(
+                    f"/api/v1/cases/{CASE_ID}/reassess",
+                    json=body,
+                )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+
+    result = response.json()
+    assert result["priority_status"] == expected_status
+
+    priority_result = result["priority_result"]
+    assert priority_result is not None
+    assert priority_result["priority"] == expected_priority
+
+    if expected_status == "minimum_only":
+        assert priority_result["priority_at_least"] == "routine"
+    else:
+        assert priority_result["priority_at_least"] is None
+
+    assert result["review_submission_status"] == "persisted"
+    assert len(submitted) == 1
+    assert submitted[0].evidence["signs_assessed"] is expected_assessed
+    assert submitted[0].evidence["priority_result"] == priority_result
+
+
+@pytest.mark.parametrize(
+    ("signs", "expected_status", "expected_priority", "expected_evidence_key"),
+    [
+        (
+            ["DISC/URGENT/MODERATE_PAIN"],
+            "complete",
+            "urgent",
+            "matched_sign_ids",
+        ),
+        (["DISC/NOT/A_REAL_SIGN"], "abstained", None, "unknown_sign_ids"),
+    ],
+    ids=["recognised", "unknown"],
+)
+def test_reassessment_preserves_submitted_sign_ids(
+    repository,
+    signs,
+    expected_status,
+    expected_priority,
+    expected_evidence_key,
+):
+    seed(repository)
+    submitted = []
+
+    async def capture_review(request):
+        submitted.append(request)
+        return await review(request)
+
+    service = service_for(repository, review_tool=capture_review)
+    app.dependency_overrides[get_reassessment_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                f"/api/v1/cases/{CASE_ID}/reassess",
+                json={"signs": signs},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["priority_status"] == expected_status
+    assert result["priority_result"]["priority"] == expected_priority
+    assert result["priority_result"][expected_evidence_key] == signs
+    assert submitted[0].evidence["signs_assessed"] is True
+    assert submitted[0].evidence["priority_result"] == result["priority_result"]
+
+
+def test_changed_sign_assessment_for_same_observation_fails_closed(repository):
+    """Never reuse a pending review whose deterministic evidence has changed."""
+    seed(repository)
+    reviews = ReviewRepository(repository.database)
+    reviews.initialize()
+
+    async def persist_review(request):
+        return reviews.submit(request)
+
+    service = service_for(repository, review_tool=persist_review)
+    app.dependency_overrides[get_reassessment_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            first = client.post(f"/api/v1/cases/{CASE_ID}/reassess")
+            second = client.post(
+                f"/api/v1/cases/{CASE_ID}/reassess",
+                json={"signs": []},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["review_submission_status"] == "persisted"
+    assert second.json()["priority_status"] == "complete"
+    assert second.json()["review_submission_status"] == "unconfirmed"
+    assert second.json()["review_request_id"] is None
+    assert second.json()["review_submission_error"] == (
+        "MCP_REVIEW_SUBMISSION_UNCONFIRMED"
+    )
+
+    pending = reviews.get_pending()
+    assert len(pending) == 1
+    assert pending[0].request_id == first.json()["review_request_id"]
+    assert pending[0].evidence["signs_assessed"] is False
+    with repository.database.connect() as connection:
+        event_count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+    assert event_count == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"signs": "invalid"},
+        {"signs": [123]},
+        {"signs": {"id": "invalid"}},
+        {"signs": [], "unexpected": True},
+    ],
+)
+def test_reassessment_rejects_malformed_signs(repository, body):
+    """Reject malformed requests before invoking the clinical workflow."""
+    seed(repository)
+
+    app.dependency_overrides[get_reassessment_service] = lambda: service_for(repository)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                f"/api/v1/cases/{CASE_ID}/reassess",
+                json=body,
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422, response.text

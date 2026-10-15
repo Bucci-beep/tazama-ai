@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { SignAssessment } from "@/lib/discriminators";
+
 export type ApiHealth = {
   status: "ok";
   service: "tazama-api";
@@ -488,6 +490,7 @@ export async function createCaseObservation(
 
 export async function requestCaseReassessment(
   caseId: string,
+  signs: SignAssessment,
 ): Promise<ReassessmentResult> {
   const trimmedCaseId = caseId.trim();
   try {
@@ -495,6 +498,8 @@ export async function requestCaseReassessment(
       `${apiBaseUrl()}/api/v1/cases/${encodeURIComponent(trimmedCaseId)}/reassess`,
       {
         method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ signs }),
         cache: "no-store",
         signal: AbortSignal.timeout(30000),
       },

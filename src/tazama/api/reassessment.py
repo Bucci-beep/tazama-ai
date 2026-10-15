@@ -24,6 +24,14 @@ class ReassessmentNotFoundError(ValueError):
     """The requested case has no persisted observations."""
 
 
+class ReassessmentRequest(BaseModel):
+    """Explicit nurse sign-assessment state for reassessment."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    signs: list[str] | None = None
+
+
 class ReassessmentResponse(BaseModel):
     """Structured result of a human-supervised synthetic reassessment."""
 
@@ -40,7 +48,9 @@ class ReassessmentResponse(BaseModel):
     comparison_status: str
     comparison_result: CompareHistoryResult | None
     comparison_error: str | None
-    priority_status: Literal["complete", "minimum_only", "abstained", "tool_unavailable"]
+    priority_status: Literal[
+        "complete", "minimum_only", "abstained", "tool_unavailable"
+    ]
     priority_result: PriorityResult | None
     priority_error: str | None
     explanation: dict[str, Any] | None
@@ -75,10 +85,21 @@ class ReassessmentService:
             explanation_tool=explanation_tool,
         )
 
-    async def reassess(self, case_id: str) -> ReassessmentResponse:
+    async def reassess(
+        self,
+        case_id: str,
+        signs: list[str] | None = None,
+    ) -> ReassessmentResponse:
         if not self.repository.get_timeline(case_id).records:
             raise ReassessmentNotFoundError(case_id)
         result = await self.graph.ainvoke(
-            {"case_id": case_id, "status": "pending", "reason": None}
+            {
+                "case_id": case_id,
+                "status": "pending",
+                "reason": None,
+                "signs": signs,
+            }
         )
-        return ReassessmentResponse.model_validate(result)
+        return ReassessmentResponse.model_validate(
+            {k: v for k, v in result.items() if k != "signs"}
+        )
