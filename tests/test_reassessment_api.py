@@ -234,7 +234,9 @@ def test_audit_failure_preserves_successful_mcp_result(repository):
     )
     assert status_code == 200
     assert payload["workflow_provenance"]["time"]["status"] == "captured"
-    assert payload["workflow_provenance"]["time"]["audit_status"] == "persistence_failed"
+    assert (
+        payload["workflow_provenance"]["time"]["audit_status"] == "persistence_failed"
+    )
     assert payload["mcp_audit_errors"] == [
         "get_current_time:MCP_AUDIT_PERSISTENCE_FAILED"
     ]
@@ -244,18 +246,103 @@ def test_real_mcp_workflow_is_idempotent_and_audited(repository):
     seed(repository)
     service = ReassessmentService(repository)
 
-    first_status, first = request_with(
-        service, f"/api/v1/cases/{CASE_ID}/reassess"
-    )
-    second_status, second = request_with(
-        service, f"/api/v1/cases/{CASE_ID}/reassess"
-    )
+    first_status, first = request_with(service, f"/api/v1/cases/{CASE_ID}/reassess")
+    second_status, second = request_with(service, f"/api/v1/cases/{CASE_ID}/reassess")
 
     assert first_status == second_status == 200
     assert first["review_request_id"] == second["review_request_id"]
     assert len(ReviewRepository(repository.database).get_pending()) == 1
-    assert len(
-        MCPToolCallRepository(repository.database).get_by_workflow_run(
-            first["workflow_run_id"]
+    assert (
+        len(
+            MCPToolCallRepository(repository.database).get_by_workflow_run(
+                first["workflow_run_id"]
+            )
         )
-    ) == 4
+        == 4
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_status", "expected_priority", "expected_assessed"),
+    [
+        (None, "minimum_only", None, False),
+        ({"signs": None}, "minimum_only", None, False),
+        ({"signs": []}, "complete", "routine", True),
+    ],
+    ids=["omitted", "explicit-null", "assessed-none-found"],
+)
+def test_reassessment_sign_assessment_contract(
+    repository,
+    body,
+    expected_status,
+    expected_priority,
+    expected_assessed,
+):
+    """Preserve the distinction between unassessed and assessed signs."""
+    seed(repository)
+    service = service_for(repository)
+
+    app.dependency_overrides[get_reassessment_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            if body is None:
+                response = client.post(f"/api/v1/cases/{CASE_ID}/reassess")
+            else:
+                response = client.post(
+                    f"/api/v1/cases/{CASE_ID}/reassess",
+                    json=body,
+                )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+
+    result = response.json()
+    assert result["priority_status"] == expected_status
+
+    priority_result = result["priority_result"]
+    assert priority_result is not None
+    assert priority_result["priority"] == expected_priority
+
+    if expected_status == "minimum_only":
+        assert priority_result["priority_at_least"] == "routine"
+    else:
+        assert priority_result["priority_at_least"] is None
+
+    assert result["review_submission_status"] == "persisted"
+
+    review = ReviewRepository(repository.database)
+    pending = review.get_pending()
+    stored = next(
+        (item for item in pending if item.request_id == result["review_request_id"]),
+        None,
+    )
+    assert stored is not None
+    assert stored.evidence["signs_assessed"] is expected_assessed
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"signs": "invalid"},
+        {"signs": [123]},
+        {"signs": {"id": "invalid"}},
+        {"signs": [], "unexpected": True},
+    ],
+)
+def test_reassessment_rejects_malformed_signs(repository, body):
+    """Reject malformed requests before invoking the clinical workflow."""
+    seed(repository)
+
+    app.dependency_overrides[get_reassessment_service] = lambda: service_for(repository)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                f"/api/v1/cases/{CASE_ID}/reassess",
+                json=body,
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422, response.text

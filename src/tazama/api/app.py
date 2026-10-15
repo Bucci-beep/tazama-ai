@@ -10,7 +10,11 @@ from tazama.api.dependencies import (
     ObservationRepositoryDependency,
     ReassessmentServiceDependency,
 )
-from tazama.api.reassessment import ReassessmentNotFoundError, ReassessmentResponse
+from tazama.api.reassessment import (
+    ReassessmentNotFoundError,
+    ReassessmentRequest,
+    ReassessmentResponse,
+)
 from tazama.mcp.contracts import PatientObservations
 from tazama.patients.models import ObservationRecord
 
@@ -161,10 +165,14 @@ def create_case_observation(
 async def reassess_case(
     case_id: CaseId,
     service: ReassessmentServiceDependency,
+    request: ReassessmentRequest | None = None,
 ) -> ReassessmentResponse:
-    """Run the existing synthetic reassessment and request clinician review."""
+    """Run synthetic reassessment with explicit sign-assessment state."""
     try:
-        return await service.reassess(case_id)
+        return await service.reassess(
+            case_id,
+            signs=request.signs if request is not None else None,
+        )
     except ReassessmentNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
