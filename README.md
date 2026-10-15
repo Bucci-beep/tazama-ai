@@ -49,6 +49,7 @@ interpretation, or workflow execution:
 GET /api/v1/health
 GET /api/v1/cases/{case_id}/observations
 POST /api/v1/cases/{case_id}/observations
+POST /api/v1/cases/{case_id}/reassess
 ```
 
 Configure the same existing SQLite file used by the backend, then start the service:
@@ -74,6 +75,44 @@ For local Next.js development, set the dashboard's server-side API base URL to
 as backend configuration/storage unavailable. Browser CORS is intentionally not enabled; use a
 Next.js server component or same-origin proxy. No authentication is implemented, so the service
 must only be used with synthetic data in a trusted development environment.
+
+### Reassessment API
+
+`POST /api/v1/cases/{case_id}/reassess` runs the existing LangGraph/MCP workflow over
+already-persisted synthetic observations. It does not accept observation data, modify the
+timeline, approve a review, or change a queue. A case with no observations returns 404 before
+any MCP call or review submission.
+
+Example response (fields abbreviated):
+
+```json
+{
+  "case_id": "SYNTHETIC-DEMO-001",
+  "workflow_run_id": "7ce3fd2d-7af3-4a84-a0aa-0b462253463e",
+  "status": "awaiting_clinician_review",
+  "observation_count": 2,
+  "latest_observation_id": "SYNTHETIC-OBS-002",
+  "comparison_status": "differences_found",
+  "comparison_result": {"status": "differences_found", "changes": []},
+  "comparison_error": null,
+  "priority_status": "minimum_only",
+  "priority_result": {"priority": null, "priority_at_least": "routine"},
+  "priority_error": null,
+  "explanation": null,
+  "explanation_error": "NOT_CONFIGURED",
+  "review_request_id": "review-uuid",
+  "review_submission_status": "persisted",
+  "review_submission_error": null,
+  "workflow_provenance": {"time": {"status": "captured"}},
+  "mcp_audit_errors": []
+}
+```
+
+The result is a deterministic proposal awaiting clinician review, not a validated clinical
+decision. Set `TAZAMA_OLLAMA_MODEL` to opt into the existing bounded local explanation selector;
+if it is absent or unavailable, deterministic reassessment continues with an explicit explanation
+error. Use `workflow_run_id` with `MCPToolCallRepository.get_by_workflow_run()` to inspect the
+corresponding MCP audit trail. Any missing audit records are listed in `mcp_audit_errors`.
 
 ## Synthetic demonstration
 

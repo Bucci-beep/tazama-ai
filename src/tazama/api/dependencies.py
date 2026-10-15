@@ -7,6 +7,8 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 
+from tazama.api.reassessment import ReassessmentService
+from tazama.orchestration.explanation import explain_evidence_with_ollama
 from tazama.storage.database import Database
 from tazama.storage.observations import ObservationRepository
 
@@ -42,4 +44,20 @@ def get_observation_repository() -> ObservationRepository:
 ObservationRepositoryDependency = Annotated[
     ObservationRepository,
     Depends(get_observation_repository),
+]
+
+
+def get_reassessment_service(
+    repository: ObservationRepositoryDependency,
+) -> ReassessmentService:
+    """Build the workflow service; Ollama is opt-in for the HTTP process."""
+    explanation_tool = (
+        explain_evidence_with_ollama if os.environ.get("TAZAMA_OLLAMA_MODEL") else None
+    )
+    return ReassessmentService(repository, explanation_tool=explanation_tool)
+
+
+ReassessmentServiceDependency = Annotated[
+    ReassessmentService,
+    Depends(get_reassessment_service),
 ]
