@@ -50,6 +50,91 @@ export type CreateObservationResult =
   | { status: "created"; record: ObservationRecord }
   | { status: "invalid" | "conflict" | "unavailable"; reason: string };
 
+export type HistoryChange = {
+  field: string;
+  before: number;
+  after: number;
+  before_obs_id: string;
+  after_obs_id: string;
+};
+
+export type HistoryComparison = {
+  schema_version: "1.0";
+  case_id: string;
+  status:
+    | "differences_found"
+    | "no_differences"
+    | "insufficient_history"
+    | "untrusted_reading";
+  changes: HistoryChange[];
+  not_comparable: string[];
+  reason: string | null;
+};
+
+export type PriorityEvidence = {
+  status: "complete" | "minimum_only" | "abstained";
+  priority: string | null;
+  priority_at_least: string | null;
+  matched_sign_ids: string[];
+  unknown_sign_ids: string[];
+  tews: {
+    status: string;
+    total?: number | null;
+    priority?: string | null;
+    missing?: string[];
+    unscorable?: Array<{ field: string }>;
+  };
+  reasons: string[];
+  protocol_version: string;
+};
+
+export type ReassessmentResponse = {
+  case_id: string;
+  workflow_run_id: string;
+  status: "awaiting_clinician_review" | "review_submission_failed";
+  reason: string | null;
+  observation_count: number;
+  has_baseline: boolean;
+  has_rechecks: boolean;
+  latest_observation_id: string;
+  comparison_status: string;
+  comparison_result: HistoryComparison | null;
+  comparison_error: string | null;
+  priority_status:
+    | "complete"
+    | "minimum_only"
+    | "abstained"
+    | "tool_unavailable";
+  priority_result: PriorityEvidence | null;
+  priority_error: string | null;
+  explanation: {
+    status?: string;
+    model?: string;
+    selected_explanation_ids?: string[];
+    statements?: string[];
+  } | null;
+  explanation_error: string | null;
+  review_request_id: string | null;
+  review_submission_status: "persisted" | "unconfirmed";
+  review_submission_error: string | null;
+  workflow_provenance: {
+    time?: {
+      status?: string;
+      server?: string;
+      tool?: string;
+      result?: { datetime?: string; timezone?: string };
+      error?: string;
+      audit_status?: string;
+    };
+  };
+  mcp_audit_errors: string[];
+};
+
+export type ReassessmentResult =
+  | { status: "completed"; reassessment: ReassessmentResponse }
+  | { status: "not_found"; reason: string }
+  | { status: "unavailable" | "invalid"; reason: string };
+
 function apiBaseUrl(): string {
   return process.env.TAZAMA_API_URL ?? "http://127.0.0.1:8000";
 }
@@ -215,6 +300,65 @@ export async function createCaseObservation(
     }
 
     return { status: "created", record: data as ObservationRecord };
+  } catch {
+    return {
+      status: "unavailable",
+      reason: "Unable to reach the local Tazama API",
+    };
+  }
+}
+
+export async function requestCaseReassessment(
+  caseId: string,
+): Promise<ReassessmentResult> {
+  const trimmedCaseId = caseId.trim();
+  try {
+    const response = await fetch(
+      `${apiBaseUrl()}/api/v1/cases/${encodeURIComponent(trimmedCaseId)}/reassess`,
+      {
+        method: "POST",
+        cache: "no-store",
+        signal: AbortSignal.timeout(30000),
+      },
+    );
+    const data: unknown = await response.json();
+
+    if (response.status === 404) {
+      return {
+        status: "not_found",
+        reason: errorDetail(data, "No observations found for this case"),
+      };
+    }
+    if (response.status === 422) {
+      return { status: "invalid", reason: "The case identifier is invalid" };
+    }
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        reason: errorDetail(data, `API returned HTTP ${response.status}`),
+      };
+    }
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      !("case_id" in data) ||
+      data.case_id !== trimmedCaseId ||
+      !("workflow_run_id" in data) ||
+      typeof data.workflow_run_id !== "string" ||
+      !("review_submission_status" in data) ||
+      !("priority_status" in data) ||
+      !("mcp_audit_errors" in data) ||
+      !Array.isArray(data.mcp_audit_errors)
+    ) {
+      return {
+        status: "unavailable",
+        reason: "API returned an unexpected reassessment response",
+      };
+    }
+    return {
+      status: "completed",
+      reassessment: data as ReassessmentResponse,
+    };
   } catch {
     return {
       status: "unavailable",

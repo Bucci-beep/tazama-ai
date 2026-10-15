@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import {
   createCaseObservation,
   type PatientObservations,
+  requestCaseReassessment,
+  type ReassessmentResponse,
 } from "@/lib/api";
 
 export type ObservationFormState = {
@@ -12,6 +14,36 @@ export type ObservationFormState = {
 };
 
 const caseIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+export type ReassessmentActionState =
+  | { status: "idle"; message: ""; result: null }
+  | { status: "error"; message: string; result: null }
+  | { status: "success"; message: string; result: ReassessmentResponse };
+
+export async function requestReassessmentAction(
+  _previousState: ReassessmentActionState,
+  formData: FormData,
+): Promise<ReassessmentActionState> {
+  const caseId = String(formData.get("case_id") ?? "").trim();
+  if (!caseIdPattern.test(caseId)) {
+    return {
+      status: "error",
+      message:
+        "Case ID must use 1–100 letters, numbers, dots, underscores, or hyphens.",
+      result: null,
+    };
+  }
+
+  const response = await requestCaseReassessment(caseId);
+  if (response.status !== "completed") {
+    return { status: "error", message: response.reason, result: null };
+  }
+  return {
+    status: "success",
+    message: "Reassessment completed. Review status is shown below.",
+    result: response.reassessment,
+  };
+}
 
 function optionalNumber(formData: FormData, name: string): number | null {
   const raw = String(formData.get(name) ?? "").trim();
