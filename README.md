@@ -87,6 +87,25 @@ uv run python -m tazama.demo
 The demo uses synthetic data, leaves the review pending, records a demo identity attestation,
 and never changes clinical priority.
 
+## MCP tool-call audit
+
+Every MCP invocation in the workflow is recorded locally in the append-only SQLite
+`mcp_tool_calls` table. Each row contains an invocation ID, workflow run ID, server and tool,
+UTC start/completion times, sanitised JSON input and output (or structured error), status, and
+duration in milliseconds. Secret-like fields are redacted; no external logging service is used.
+If SQLite cannot accept a record, the workflow preserves a completed MCP result but exposes the
+affected tool under `mcp_audit_errors`; it does not claim that the missing record was persisted.
+
+Application code can inspect a run in chronological order with
+`MCPToolCallRepository(database).get_by_workflow_run(workflow_run_id)`. For a local demo database,
+the equivalent direct query is:
+
+```sql
+SELECT * FROM mcp_tool_calls
+WHERE workflow_run_id = 'RUN-ID'
+ORDER BY started_at, invocation_id;
+```
+
 ## Borrowed MCP server
 
 Tazama calls the official Time MCP server's `get_current_time` tool over stdio with the

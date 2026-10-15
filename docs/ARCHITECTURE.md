@@ -103,6 +103,17 @@ not create a duplicate review request.
   deterministic evidence, and audit events.
 - Audit events and attestations are append-only, enforced by database triggers.
 - Review requests are created as "pending" only.
+- `mcp_tool_calls` is a separate append-only audit table. It records one completed row per MCP
+  invocation: UUID invocation ID, workflow run ID, MCP server identity, tool name, UTC start and
+  completion timestamps, sanitised input JSON, sanitised output JSON or structured error JSON,
+  status (`success`, `tool_error`, `validation_error`, or `transport_error`), and duration in
+  milliseconds. Secret-like keys are redacted before persistence.
+- `MCPToolCallRepository.get_by_workflow_run()` returns a run's calls ordered by start time and
+  invocation ID. Logging remains local; it neither changes deterministic evidence nor sends
+  clinical information to an observability service.
+- An audit-write failure is distinct from MCP execution. Successful validated tool results remain
+  usable and the workflow exposes `mcp_audit_errors`; failed MCP calls remain failures and are
+  annotated when their error record could not be persisted.
 
 ### Approval gate
 - A clinician decision is a separate, explicit action from proposing a priority.
