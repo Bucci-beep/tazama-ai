@@ -6,7 +6,11 @@ from typing import Annotated, Literal
 from fastapi import FastAPI, HTTPException, Path, status
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from tazama.api.dependencies import ObservationRepositoryDependency
+from tazama.api.dependencies import (
+    ObservationRepositoryDependency,
+    ReassessmentServiceDependency,
+)
+from tazama.api.reassessment import ReassessmentNotFoundError, ReassessmentResponse
 from tazama.mcp.contracts import PatientObservations
 from tazama.patients.models import ObservationRecord
 
@@ -144,3 +148,30 @@ def create_case_observation(
         ) from exc
 
     return record
+
+
+@app.post(
+    "/api/v1/cases/{case_id}/reassess",
+    response_model=ReassessmentResponse,
+    responses={
+        404: {"description": "No persisted observations for the case"},
+        503: {"description": "Database configuration or storage unavailable"},
+    },
+)
+async def reassess_case(
+    case_id: CaseId,
+    service: ReassessmentServiceDependency,
+) -> ReassessmentResponse:
+    """Run the existing synthetic reassessment and request clinician review."""
+    try:
+        return await service.reassess(case_id)
+    except ReassessmentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No observations found for case",
+        ) from exc
+    except (sqlite3.Error, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Reassessment storage is unavailable or invalid",
+        ) from exc

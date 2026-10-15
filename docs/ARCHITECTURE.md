@@ -125,11 +125,17 @@ not create a duplicate review request.
 - Real approval stays blocked on authentication, authorisation, clinical governance and
   clinical validation.
 
-### Read-only API (`src/tazama/api/`)
-FastAPI, GET only, on a read-only database connection:
+### Synthetic API (`src/tazama/api/`)
+FastAPI over the configured local SQLite database:
 - `GET /api/v1/health`
 - `GET /api/v1/cases/{case_id}/observations` (404 if none, 503 if the database is
   misconfigured)
+- `POST /api/v1/cases/{case_id}/observations` persists synthetic observations without scoring.
+- `POST /api/v1/cases/{case_id}/reassess` preflights the persisted timeline, then invokes the
+  existing LangGraph workflow. Its typed response includes deterministic evidence, tool errors,
+  pending review state, nonclinical provenance, and MCP audit coverage errors. The workflow run ID
+  correlates the response with `mcp_tool_calls` rows. The endpoint cannot approve reviews or change
+  clinical priority or queue state.
 
 ### Dashboard (`web/`)
 Next.js, read-only. It shows persisted observations, backend status and a safety notice.
