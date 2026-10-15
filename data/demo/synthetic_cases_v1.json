@@ -1,0 +1,126 @@
+{
+  "schema_version": "1.0",
+  "purpose": "Synthetic-only deterministic regression fixtures",
+  "clinical_validation": false,
+  "cases": [
+    {
+      "case_id": "SYNTHETIC-A",
+      "description": "Relatively stable observations",
+      "baseline": {
+        "heart_rate_bpm": 78,
+        "respiratory_rate_bpm": 16,
+        "systolic_bp_mmhg": 124,
+        "temperature_c": 36.8,
+        "consciousness": "alert",
+        "mobility": "walking",
+        "trauma": false
+      },
+      "recheck": {
+        "heart_rate_bpm": 80,
+        "respiratory_rate_bpm": 16,
+        "systolic_bp_mmhg": 122,
+        "temperature_c": 36.8,
+        "consciousness": "alert",
+        "mobility": "walking",
+        "trauma": false
+      },
+      "expected": {
+        "comparison_status": "differences_found",
+        "changed_fields": [
+          "heart_rate_bpm",
+          "systolic_bp_mmhg"
+        ],
+        "not_comparable": [],
+        "tews_total": 1,
+        "unassessed_status": "minimum_only",
+        "unassessed_priority_at_least": "routine",
+        "assessed_empty_status": "complete",
+        "assessed_empty_priority": "routine"
+      }
+    },
+    {
+      "case_id": "SYNTHETIC-B",
+      "description": "Changed observations with higher proposed priority",
+      "baseline": {
+        "heart_rate_bpm": 96,
+        "respiratory_rate_bpm": 18,
+        "systolic_bp_mmhg": 118,
+        "temperature_c": 36.8,
+        "consciousness": "alert",
+        "mobility": "walking",
+        "trauma": false
+      },
+      "recheck": {
+        "heart_rate_bpm": 112,
+        "respiratory_rate_bpm": 22,
+        "systolic_bp_mmhg": 108,
+        "temperature_c": 36.8,
+        "consciousness": "alert",
+        "mobility": "with_help",
+        "trauma": false
+      },
+      "expected": {
+        "comparison_status": "differences_found",
+        "changed_fields": [
+          "heart_rate_bpm",
+          "respiratory_rate_bpm",
+          "systolic_bp_mmhg"
+        ],
+        "not_comparable": [],
+        "tews_total": 5,
+        "unassessed_status": "minimum_only",
+        "unassessed_priority_at_least": "very_urgent",
+        "assessed_empty_status": "complete",
+        "assessed_empty_priority": "very_urgent"
+      }
+    },
+    {
+      "case_id": "SYNTHETIC-C",
+      "description": "Missing and unscorable evidence",
+      "assumptions": [
+        "Baseline SpO2 of 98 is illustrative and awaits Daud's confirmation."
+      ],
+      "baseline": {
+        "heart_rate_bpm": 84,
+        "respiratory_rate_bpm": 16,
+        "systolic_bp_mmhg": 120,
+        "temperature_c": 36.8,
+        "spo2_percent": 98,
+        "consciousness": "alert",
+        "mobility": "walking",
+        "trauma": false
+      },
+      "recheck": {
+        "heart_rate_bpm": 112,
+        "respiratory_rate_bpm": 14.5,
+        "consciousness": "alert",
+        "mobility": "walking",
+        "trauma": false
+      },
+      "expected": {
+        "comparison_status": "differences_found",
+        "changed_fields": [
+          "heart_rate_bpm",
+          "respiratory_rate_bpm"
+        ],
+        "not_comparable": [
+          "systolic_bp_mmhg",
+          "temperature_c",
+          "spo2_percent"
+        ],
+        "tews_total": null,
+        "unassessed_status": "abstained",
+        "unassessed_priority_at_least": null,
+        "assessed_empty_status": "abstained",
+        "assessed_empty_priority": null,
+        "missing_fields": [
+          "systolic_bp_mmhg",
+          "temperature_c"
+        ],
+        "unscorable_fields": [
+          "respiratory_rate_bpm"
+        ]
+      }
+    }
+  ]
+}
