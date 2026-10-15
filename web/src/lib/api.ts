@@ -50,6 +50,91 @@ export type CreateObservationResult =
   | { status: "created"; record: ObservationRecord }
   | { status: "invalid" | "conflict" | "unavailable"; reason: string };
 
+export type HistoryChange = {
+  field: string;
+  before: number;
+  after: number;
+  before_obs_id: string;
+  after_obs_id: string;
+};
+
+export type HistoryComparison = {
+  schema_version: "1.0";
+  case_id: string;
+  status:
+    | "differences_found"
+    | "no_differences"
+    | "insufficient_history"
+    | "untrusted_reading";
+  changes: HistoryChange[];
+  not_comparable: string[];
+  reason: string | null;
+};
+
+export type PriorityEvidence = {
+  status: "complete" | "minimum_only" | "abstained";
+  priority: string | null;
+  priority_at_least: string | null;
+  matched_sign_ids: string[];
+  unknown_sign_ids: string[];
+  tews: {
+    status: string;
+    total?: number | null;
+    priority?: string | null;
+    missing?: string[];
+    unscorable?: Array<{ field: string }>;
+  };
+  reasons: string[];
+  protocol_version: string;
+};
+
+export type ReassessmentResponse = {
+  case_id: string;
+  workflow_run_id: string;
+  status: "awaiting_clinician_review" | "review_submission_failed";
+  reason: string | null;
+  observation_count: number;
+  has_baseline: boolean;
+  has_rechecks: boolean;
+  latest_observation_id: string;
+  comparison_status: string;
+  comparison_result: HistoryComparison | null;
+  comparison_error: string | null;
+  priority_status:
+    | "complete"
+    | "minimum_only"
+    | "abstained"
+    | "tool_unavailable";
+  priority_result: PriorityEvidence | null;
+  priority_error: string | null;
+  explanation: {
+    status?: string;
+    model?: string;
+    selected_explanation_ids?: string[];
+    statements?: string[];
+  } | null;
+  explanation_error: string | null;
+  review_request_id: string | null;
+  review_submission_status: "persisted" | "unconfirmed";
+  review_submission_error: string | null;
+  workflow_provenance: {
+    time?: {
+      status?: string;
+      server?: string;
+      tool?: string;
+      result?: { datetime?: string; timezone?: string };
+      error?: string;
+      audit_status?: string;
+    };
+  };
+  mcp_audit_errors: string[];
+};
+
+export type ReassessmentResult =
+  | { status: "completed"; reassessment: ReassessmentResponse }
+  | { status: "not_found"; reason: string }
+  | { status: "unavailable" | "invalid"; reason: string };
+
 function apiBaseUrl(): string {
   return process.env.TAZAMA_API_URL ?? "http://127.0.0.1:8000";
 }
@@ -165,6 +250,184 @@ function errorDetail(data: unknown, fallback: string): string {
   return fallback;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isHistoryComparison(value: unknown): value is HistoryComparison {
+  if (!isRecord(value)) return false;
+  const allowed = new Set([
+    "differences_found",
+    "no_differences",
+    "insufficient_history",
+    "untrusted_reading",
+  ]);
+  return (
+    value.schema_version === "1.0" &&
+    typeof value.case_id === "string" &&
+    allowed.has(String(value.status)) &&
+    Array.isArray(value.changes) &&
+    value.changes.every(
+      (change) =>
+        isRecord(change) &&
+        typeof change.field === "string" &&
+        typeof change.before === "number" &&
+        Number.isFinite(change.before) &&
+        typeof change.after === "number" &&
+        Number.isFinite(change.after) &&
+        typeof change.before_obs_id === "string" &&
+        typeof change.after_obs_id === "string",
+    ) &&
+    isStringArray(value.not_comparable) &&
+    isNullableString(value.reason)
+  );
+}
+
+function isTewsEvidence(value: unknown): value is PriorityEvidence["tews"] {
+  if (!isRecord(value) || typeof value.status !== "string") return false;
+  if (
+    "total" in value &&
+    value.total !== null &&
+    (typeof value.total !== "number" || !Number.isFinite(value.total))
+  ) return false;
+  if ("priority" in value && !isNullableString(value.priority)) return false;
+  if ("missing" in value && !isStringArray(value.missing)) return false;
+  return !(
+    "unscorable" in value &&
+    (!Array.isArray(value.unscorable) ||
+      !value.unscorable.every(
+        (issue) => isRecord(issue) && typeof issue.field === "string",
+      ))
+  );
+}
+
+function isPriorityEvidence(value: unknown): value is PriorityEvidence {
+  if (!isRecord(value)) return false;
+  const allowed = new Set(["complete", "minimum_only", "abstained"]);
+  return (
+    allowed.has(String(value.status)) &&
+    isNullableString(value.priority) &&
+    isNullableString(value.priority_at_least) &&
+    isStringArray(value.matched_sign_ids) &&
+    isStringArray(value.unknown_sign_ids) &&
+    isTewsEvidence(value.tews) &&
+    isStringArray(value.reasons) &&
+    typeof value.protocol_version === "string"
+  );
+}
+
+function isExplanation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    (!("status" in value) || typeof value.status === "string") &&
+    (!("model" in value) || typeof value.model === "string") &&
+    (!("selected_explanation_ids" in value) ||
+      isStringArray(value.selected_explanation_ids)) &&
+    (!("statements" in value) || isStringArray(value.statements))
+  );
+}
+
+function isTimeProvenance(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    !new Set(["captured", "tool_unavailable"]).has(String(value.status)) ||
+    typeof value.server !== "string" ||
+    typeof value.tool !== "string" ||
+    ("error" in value && typeof value.error !== "string") ||
+    ("audit_status" in value && typeof value.audit_status !== "string")
+  ) return false;
+  if (!("result" in value)) return value.status === "tool_unavailable";
+  return (
+    value.status === "captured" &&
+    isRecord(value.result) &&
+    typeof value.result.datetime === "string" &&
+    typeof value.result.timezone === "string"
+  );
+}
+
+function isReassessmentResponse(
+  value: unknown,
+  expectedCaseId: string,
+): value is ReassessmentResponse {
+  if (!isRecord(value)) return false;
+  const workflowStatuses = new Set([
+    "awaiting_clinician_review",
+    "review_submission_failed",
+  ]);
+  const comparisonStatuses = new Set([
+    "differences_found",
+    "no_differences",
+    "insufficient_history",
+    "untrusted_reading",
+    "tool_unavailable",
+  ]);
+  const priorityStatuses = new Set([
+    "complete",
+    "minimum_only",
+    "abstained",
+    "tool_unavailable",
+  ]);
+  if (
+    value.case_id !== expectedCaseId ||
+    typeof value.workflow_run_id !== "string" ||
+    !value.workflow_run_id ||
+    !workflowStatuses.has(String(value.status)) ||
+    !isNullableString(value.reason) ||
+    !Number.isInteger(value.observation_count) ||
+    Number(value.observation_count) < 1 ||
+    typeof value.has_baseline !== "boolean" ||
+    typeof value.has_rechecks !== "boolean" ||
+    typeof value.latest_observation_id !== "string" ||
+    !comparisonStatuses.has(String(value.comparison_status)) ||
+    !isNullableString(value.comparison_error) ||
+    !priorityStatuses.has(String(value.priority_status)) ||
+    !isNullableString(value.priority_error) ||
+    !isNullableString(value.explanation_error) ||
+    !isNullableString(value.review_request_id) ||
+    !new Set(["persisted", "unconfirmed"]).has(
+      String(value.review_submission_status),
+    ) ||
+    !isNullableString(value.review_submission_error) ||
+    !isRecord(value.workflow_provenance) ||
+    !isTimeProvenance(value.workflow_provenance.time) ||
+    !isStringArray(value.mcp_audit_errors)
+  ) return false;
+
+  if (
+    value.comparison_result !== null &&
+    !isHistoryComparison(value.comparison_result)
+  ) return false;
+  if (
+    value.priority_result !== null &&
+    !isPriorityEvidence(value.priority_result)
+  ) return false;
+  if (value.explanation !== null && !isExplanation(value.explanation)) return false;
+
+  if (value.priority_status === "tool_unavailable") {
+    if (value.priority_result !== null) return false;
+  } else if (
+    !isPriorityEvidence(value.priority_result) ||
+    value.priority_result.status !== value.priority_status
+  ) return false;
+
+  if (value.review_submission_status === "persisted") {
+    return (
+      typeof value.review_request_id === "string" &&
+      value.review_request_id.length > 0 &&
+      value.status === "awaiting_clinician_review"
+    );
+  }
+  return value.review_request_id === null;
+}
+
 export async function createCaseObservation(
   caseId: string,
   input: CreateObservationInput,
@@ -215,6 +478,54 @@ export async function createCaseObservation(
     }
 
     return { status: "created", record: data as ObservationRecord };
+  } catch {
+    return {
+      status: "unavailable",
+      reason: "Unable to reach the local Tazama API",
+    };
+  }
+}
+
+export async function requestCaseReassessment(
+  caseId: string,
+): Promise<ReassessmentResult> {
+  const trimmedCaseId = caseId.trim();
+  try {
+    const response = await fetch(
+      `${apiBaseUrl()}/api/v1/cases/${encodeURIComponent(trimmedCaseId)}/reassess`,
+      {
+        method: "POST",
+        cache: "no-store",
+        signal: AbortSignal.timeout(30000),
+      },
+    );
+    const data: unknown = await response.json();
+
+    if (response.status === 404) {
+      return {
+        status: "not_found",
+        reason: errorDetail(data, "No observations found for this case"),
+      };
+    }
+    if (response.status === 422) {
+      return { status: "invalid", reason: "The case identifier is invalid" };
+    }
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        reason: errorDetail(data, `API returned HTTP ${response.status}`),
+      };
+    }
+    if (!isReassessmentResponse(data, trimmedCaseId)) {
+      return {
+        status: "unavailable",
+        reason: "API returned an unexpected reassessment response",
+      };
+    }
+    return {
+      status: "completed",
+      reassessment: data as ReassessmentResponse,
+    };
   } catch {
     return {
       status: "unavailable",

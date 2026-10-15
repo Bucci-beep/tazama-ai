@@ -1,4 +1,5 @@
 import { getCaseTimeline, type PatientObservations } from "@/lib/api";
+import { ReassessmentPanel } from "@/components/dashboard/reassessment-panel";
 
 const measurementLabels: Record<keyof PatientObservations, string> = {
   heart_rate_bpm: "Heart rate",
@@ -78,6 +79,7 @@ export async function CaseObservations({ caseId }: { caseId: string }) {
           </dl>
         </article>
       ))}
+      <ReassessmentPanel caseId={caseId} />
     </div>
   );
 }

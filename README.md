@@ -76,6 +76,13 @@ as backend configuration/storage unavailable. Browser CORS is intentionally not 
 Next.js server component or same-origin proxy. No authentication is implemented, so the service
 must only be used with synthetic data in a trusted development environment.
 
+After loading a persisted case, the dashboard provides an explicit **Request reassessment** action.
+It calls the FastAPI reassessment endpoint through a Next.js server action, sends only the case ID,
+and displays deterministic evidence, limitations, pending-review confirmation, provenance, and MCP
+audit warnings. Saving an observation never triggers reassessment automatically. Start the frontend
+with `cd web && npm run dev`; use `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`
+for frontend verification.
+
 ### Reassessment API
 
 `POST /api/v1/cases/{case_id}/reassess` runs the existing LangGraph/MCP workflow over

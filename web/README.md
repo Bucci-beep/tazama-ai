@@ -30,6 +30,20 @@ when the API is hosted elsewhere:
 TAZAMA_API_URL=http://127.0.0.1:8000 npm run dev
 ```
 
+Load a synthetic case with persisted observations, then select **Request reassessment**. The browser
+submits only the case identifier to a Next.js server action, which calls the FastAPI reassessment
+endpoint server-side. Results remain proposals awaiting clinician review; the dashboard provides no
+approval or queue controls. Saving an observation does not automatically run reassessment.
+
+Run frontend verification with:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
 ## Verification
 
 ```bash
