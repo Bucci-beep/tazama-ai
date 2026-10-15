@@ -180,6 +180,33 @@ def test_ctrl_c_cleans_up_both_children(config, monkeypatch):
     assert stopped == [calls[1][2], calls[0][2]]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group behavior")
+def test_stop_process_cleans_up_descendant_after_parent_exits(monkeypatch):
+    process = FakeProcess(pid=4321, exit_code=0)
+    group_exists = True
+    signals = []
+
+    def killpg(process_group_id, process_signal):
+        nonlocal group_exists
+        signals.append((process_group_id, process_signal))
+        if process_signal == 0:
+            if not group_exists:
+                raise ProcessLookupError
+            return
+        if process_signal == local_dev.signal.SIGTERM:
+            group_exists = False
+
+    monkeypatch.setattr(local_dev.os, "killpg", killpg)
+
+    local_dev.stop_process(process, timeout=0.1)
+
+    assert signals == [
+        (process.pid, 0),
+        (process.pid, local_dev.signal.SIGTERM),
+        (process.pid, 0),
+    ]
+
+
 def test_child_environments_and_commands_are_propagated(config, monkeypatch):
     calls, stopped, popen = launcher_mocks(monkeypatch)
     monkeypatch.setenv("TAZAMA_OLLAMA_MODEL", "local-model")

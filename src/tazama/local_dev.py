@@ -155,24 +155,84 @@ def _popen_options() -> dict[str, object]:
     return {"start_new_session": True}
 
 
+def _process_group_exists(process_group_id: int) -> bool | None:
+    """Check a launcher-owned process group without treating denial as absence."""
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        print(
+            f"Warning: permission denied while checking process group "
+            f"{process_group_id}; cleanup could not be verified.",
+            file=sys.stderr,
+        )
+        return None
+    return True
+
+
+def _wait_for_process_group_exit(
+    process_group_id: int, timeout: float
+) -> bool | None:
+    deadline = time.monotonic() + timeout
+    while True:
+        exists = _process_group_exists(process_group_id)
+        if exists is not True:
+            return exists is False
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+
+
 def stop_process(process: Process, *, timeout: float = 5.0) -> None:
     """Stop a child process group, escalating only after a bounded wait."""
-    if process.poll() is not None:
+    if os.name == "nt":
+        if process.poll() is not None:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=timeout)
+        return
+
+    # POSIX children start a new session, so their original PID is the process
+    # group ID owned by this launcher even if the direct child has since exited.
+    process_group_id = process.pid
+    if _process_group_exists(process_group_id) is not True:
         return
     try:
-        if os.name == "nt":
-            process.terminate()
-        else:
-            os.killpg(process.pid, signal.SIGTERM)
-        process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        if os.name == "nt":
-            process.kill()
-        else:
-            os.killpg(process.pid, signal.SIGKILL)
-        process.wait(timeout=timeout)
+        os.killpg(process_group_id, signal.SIGTERM)
     except ProcessLookupError:
         return
+    except PermissionError:
+        print(
+            f"Warning: permission denied while stopping process group "
+            f"{process_group_id}; child processes may still be running.",
+            file=sys.stderr,
+        )
+        return
+
+    terminated = _wait_for_process_group_exit(process_group_id, timeout)
+    if terminated is not False:
+        return
+    try:
+        os.killpg(process_group_id, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        print(
+            f"Warning: permission denied while killing process group "
+            f"{process_group_id}; child processes may still be running.",
+            file=sys.stderr,
+        )
+        return
+    if _wait_for_process_group_exit(process_group_id, timeout) is False:
+        print(
+            f"Warning: process group {process_group_id} still exists after cleanup.",
+            file=sys.stderr,
+        )
 
 
 def supervise(processes: Sequence[tuple[str, Process]], stop: threading.Event) -> None:
