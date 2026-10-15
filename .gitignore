@@ -10,6 +10,7 @@ __pycache__/
 .DS_Store
 .coverage
 htmlcov/
+.local/
 
 # Local development backups
 *.bak

@@ -26,13 +26,58 @@ not been clinically validated.
 
 ## Local development
 
-Python 3.12 and uv are required.
+Prerequisites:
 
-Install dependencies:
+- Python 3.12 and [uv](https://docs.astral.sh/uv/)
+- Node.js 20 or newer with npm
+
+Install the pinned Python dependencies once:
+
 
 ```bash
 uv sync
 ```
+
+Then start the FastAPI backend and Next.js dashboard together with one command:
+
+```bash
+uv run python -m tazama.local_dev
+```
+
+The launcher creates or updates the schema at `.local/tazama.sqlite3`, which is excluded from Git.
+Initialization is idempotent: existing observations, reviews, audit records, and other database
+contents are preserved and no scenarios are seeded. If `web/node_modules` is absent, the launcher
+runs `npm ci` using the committed lockfile.
+
+When both readiness checks pass, open:
+
+- Dashboard: <http://127.0.0.1:3000>
+- FastAPI: <http://127.0.0.1:8000>
+- Health check: <http://127.0.0.1:8000/api/v1/health>
+
+Press Ctrl+C once to stop both services. Termination signals are forwarded to both child process
+groups, with a bounded forced shutdown if a child does not exit. The launcher never kills a process
+already using port 3000 or 8000; it fails before startup and asks you to free the occupied port.
+
+Ollama is optional. Deterministic reassessment works without it and reports explanations as
+unavailable. To use the existing bounded explanation selector, start Ollama separately and set a
+model already installed on your machine before launching; no model is downloaded automatically:
+
+```bash
+TAZAMA_OLLAMA_MODEL=llama3.2:3b uv run python -m tazama.local_dev
+```
+
+Troubleshooting:
+
+- Missing `uv` or Python packages: install uv, then run `uv sync`.
+- Missing Node/npm: install Node.js 20 or newer, then retry.
+- Frontend dependency failure: run `cd web && npm ci` and review npm's output.
+- Port 3000 or 8000 occupied: stop the service using that port; the launcher will not terminate it.
+- Startup timeout or child exit: review the backend/frontend output printed in the same terminal.
+  Set `TAZAMA_STARTUP_TIMEOUT` to a larger number of seconds on slower machines.
+
+This environment is for synthetic data and software research only. It is not clinically validated
+or authorised for patient care.
 
 Run tests:
 
