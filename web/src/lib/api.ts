@@ -250,6 +250,184 @@ function errorDetail(data: unknown, fallback: string): string {
   return fallback;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isHistoryComparison(value: unknown): value is HistoryComparison {
+  if (!isRecord(value)) return false;
+  const allowed = new Set([
+    "differences_found",
+    "no_differences",
+    "insufficient_history",
+    "untrusted_reading",
+  ]);
+  return (
+    value.schema_version === "1.0" &&
+    typeof value.case_id === "string" &&
+    allowed.has(String(value.status)) &&
+    Array.isArray(value.changes) &&
+    value.changes.every(
+      (change) =>
+        isRecord(change) &&
+        typeof change.field === "string" &&
+        typeof change.before === "number" &&
+        Number.isFinite(change.before) &&
+        typeof change.after === "number" &&
+        Number.isFinite(change.after) &&
+        typeof change.before_obs_id === "string" &&
+        typeof change.after_obs_id === "string",
+    ) &&
+    isStringArray(value.not_comparable) &&
+    isNullableString(value.reason)
+  );
+}
+
+function isTewsEvidence(value: unknown): value is PriorityEvidence["tews"] {
+  if (!isRecord(value) || typeof value.status !== "string") return false;
+  if (
+    "total" in value &&
+    value.total !== null &&
+    (typeof value.total !== "number" || !Number.isFinite(value.total))
+  ) return false;
+  if ("priority" in value && !isNullableString(value.priority)) return false;
+  if ("missing" in value && !isStringArray(value.missing)) return false;
+  return !(
+    "unscorable" in value &&
+    (!Array.isArray(value.unscorable) ||
+      !value.unscorable.every(
+        (issue) => isRecord(issue) && typeof issue.field === "string",
+      ))
+  );
+}
+
+function isPriorityEvidence(value: unknown): value is PriorityEvidence {
+  if (!isRecord(value)) return false;
+  const allowed = new Set(["complete", "minimum_only", "abstained"]);
+  return (
+    allowed.has(String(value.status)) &&
+    isNullableString(value.priority) &&
+    isNullableString(value.priority_at_least) &&
+    isStringArray(value.matched_sign_ids) &&
+    isStringArray(value.unknown_sign_ids) &&
+    isTewsEvidence(value.tews) &&
+    isStringArray(value.reasons) &&
+    typeof value.protocol_version === "string"
+  );
+}
+
+function isExplanation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    (!("status" in value) || typeof value.status === "string") &&
+    (!("model" in value) || typeof value.model === "string") &&
+    (!("selected_explanation_ids" in value) ||
+      isStringArray(value.selected_explanation_ids)) &&
+    (!("statements" in value) || isStringArray(value.statements))
+  );
+}
+
+function isTimeProvenance(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    !new Set(["captured", "tool_unavailable"]).has(String(value.status)) ||
+    typeof value.server !== "string" ||
+    typeof value.tool !== "string" ||
+    ("error" in value && typeof value.error !== "string") ||
+    ("audit_status" in value && typeof value.audit_status !== "string")
+  ) return false;
+  if (!("result" in value)) return value.status === "tool_unavailable";
+  return (
+    value.status === "captured" &&
+    isRecord(value.result) &&
+    typeof value.result.datetime === "string" &&
+    typeof value.result.timezone === "string"
+  );
+}
+
+function isReassessmentResponse(
+  value: unknown,
+  expectedCaseId: string,
+): value is ReassessmentResponse {
+  if (!isRecord(value)) return false;
+  const workflowStatuses = new Set([
+    "awaiting_clinician_review",
+    "review_submission_failed",
+  ]);
+  const comparisonStatuses = new Set([
+    "differences_found",
+    "no_differences",
+    "insufficient_history",
+    "untrusted_reading",
+    "tool_unavailable",
+  ]);
+  const priorityStatuses = new Set([
+    "complete",
+    "minimum_only",
+    "abstained",
+    "tool_unavailable",
+  ]);
+  if (
+    value.case_id !== expectedCaseId ||
+    typeof value.workflow_run_id !== "string" ||
+    !value.workflow_run_id ||
+    !workflowStatuses.has(String(value.status)) ||
+    !isNullableString(value.reason) ||
+    !Number.isInteger(value.observation_count) ||
+    Number(value.observation_count) < 1 ||
+    typeof value.has_baseline !== "boolean" ||
+    typeof value.has_rechecks !== "boolean" ||
+    typeof value.latest_observation_id !== "string" ||
+    !comparisonStatuses.has(String(value.comparison_status)) ||
+    !isNullableString(value.comparison_error) ||
+    !priorityStatuses.has(String(value.priority_status)) ||
+    !isNullableString(value.priority_error) ||
+    !isNullableString(value.explanation_error) ||
+    !isNullableString(value.review_request_id) ||
+    !new Set(["persisted", "unconfirmed"]).has(
+      String(value.review_submission_status),
+    ) ||
+    !isNullableString(value.review_submission_error) ||
+    !isRecord(value.workflow_provenance) ||
+    !isTimeProvenance(value.workflow_provenance.time) ||
+    !isStringArray(value.mcp_audit_errors)
+  ) return false;
+
+  if (
+    value.comparison_result !== null &&
+    !isHistoryComparison(value.comparison_result)
+  ) return false;
+  if (
+    value.priority_result !== null &&
+    !isPriorityEvidence(value.priority_result)
+  ) return false;
+  if (value.explanation !== null && !isExplanation(value.explanation)) return false;
+
+  if (value.priority_status === "tool_unavailable") {
+    if (value.priority_result !== null) return false;
+  } else if (
+    !isPriorityEvidence(value.priority_result) ||
+    value.priority_result.status !== value.priority_status
+  ) return false;
+
+  if (value.review_submission_status === "persisted") {
+    return (
+      typeof value.review_request_id === "string" &&
+      value.review_request_id.length > 0 &&
+      value.status === "awaiting_clinician_review"
+    );
+  }
+  return value.review_request_id === null;
+}
+
 export async function createCaseObservation(
   caseId: string,
   input: CreateObservationInput,
@@ -338,18 +516,7 @@ export async function requestCaseReassessment(
         reason: errorDetail(data, `API returned HTTP ${response.status}`),
       };
     }
-    if (
-      typeof data !== "object" ||
-      data === null ||
-      !("case_id" in data) ||
-      data.case_id !== trimmedCaseId ||
-      !("workflow_run_id" in data) ||
-      typeof data.workflow_run_id !== "string" ||
-      !("review_submission_status" in data) ||
-      !("priority_status" in data) ||
-      !("mcp_audit_errors" in data) ||
-      !Array.isArray(data.mcp_audit_errors)
-    ) {
+    if (!isReassessmentResponse(data, trimmedCaseId)) {
       return {
         status: "unavailable",
         reason: "API returned an unexpected reassessment response",
