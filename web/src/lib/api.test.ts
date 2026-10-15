@@ -70,7 +70,7 @@ describe("requestCaseReassessment response validation", () => {
 
   it("accepts a complete valid response", async () => {
     respondWith(validResponse());
-    expect((await requestCaseReassessment("SYNTHETIC-1")).status).toBe("completed");
+    expect((await requestCaseReassessment("SYNTHETIC-1", null)).status).toBe("completed");
   });
 
   it.each([
@@ -86,7 +86,7 @@ describe("requestCaseReassessment response validation", () => {
     mutate(body);
     respondWith(body);
 
-    await expect(requestCaseReassessment("SYNTHETIC-1")).resolves.toEqual({
+    await expect(requestCaseReassessment("SYNTHETIC-1", null)).resolves.toEqual({
       status: "unavailable",
       reason: "API returned an unexpected reassessment response",
     });
@@ -99,11 +99,28 @@ describe("requestCaseReassessment response validation", () => {
     body.priority_error = "MCP_PRIORITY_TOOL_UNAVAILABLE";
     respondWith(body);
 
-    const result = await requestCaseReassessment("SYNTHETIC-1");
+    const result = await requestCaseReassessment("SYNTHETIC-1", null);
     expect(result.status).toBe("completed");
     if (result.status === "completed") {
       expect(result.reassessment.priority_result).toBeNull();
       expect(result.reassessment.priority_error).toBe("MCP_PRIORITY_TOOL_UNAVAILABLE");
     }
+  });
+
+  it("posts the explicit signs state as JSON", async () => {
+    respondWith(validResponse());
+
+    await requestCaseReassessment("SYNTHETIC-1", [
+      "DISC/URGENT/MODERATE_PAIN",
+    ]);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/v1/cases/SYNTHETIC-1/reassess",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ signs: ["DISC/URGENT/MODERATE_PAIN"] }),
+      }),
+    );
   });
 });

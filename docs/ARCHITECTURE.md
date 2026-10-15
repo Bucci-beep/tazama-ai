@@ -149,6 +149,9 @@ It has no approve, edit or queue controls.
 - Integration tests run a real MCP client against the real server over stdio.
 
 ## Known gaps
+- Review persistence allows only one pending review per observation. A later reassessment with
+  changed nurse-assessed sign evidence is rejected rather than overwriting or versioning the
+  existing review.
 - The API does not yet expose pending review requests or a review's stored evidence, so
   the dashboard shows observations only.
 - The default demo case has no nurse-assessed signs, so its priority is "at least

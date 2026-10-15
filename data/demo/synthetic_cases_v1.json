@@ -77,9 +77,6 @@
     {
       "case_id": "SYNTHETIC-C",
       "description": "Missing and unscorable evidence",
-      "assumptions": [
-        "Baseline SpO2 of 98 is illustrative and awaits Daud's confirmation."
-      ],
       "baseline": {
         "heart_rate_bpm": 84,
         "respiratory_rate_bpm": 16,

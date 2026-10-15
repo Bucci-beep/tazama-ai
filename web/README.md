@@ -31,9 +31,12 @@ TAZAMA_API_URL=http://127.0.0.1:8000 npm run dev
 ```
 
 Load a synthetic case with persisted observations, then select **Request reassessment**. The browser
-submits only the case identifier to a Next.js server action, which calls the FastAPI reassessment
-endpoint server-side. Results remain proposals awaiting clinician review; the dashboard provides no
-approval or queue controls. Saving an observation does not automatically run reassessment.
+submits the case identifier and an explicit nurse sign-assessment state to a Next.js server action,
+which validates chart-defined sign IDs before calling the FastAPI reassessment endpoint server-side.
+Results remain proposals awaiting clinician review; the dashboard provides no approval or queue
+controls. Saving an observation does not automatically run reassessment. Changed sign evidence may
+be rejected after a review has already been submitted for the same observation because review
+versioning is not implemented.
 
 Run frontend verification with:
 

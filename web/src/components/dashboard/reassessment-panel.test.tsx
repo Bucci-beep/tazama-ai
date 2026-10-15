@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReassessmentActionState } from "@/app/actions";
 import type { ReassessmentResponse } from "@/lib/api";
+import { discriminatorGroups } from "@/lib/discriminators";
 
 const action = vi.fn<
   (state: ReassessmentActionState, formData: FormData) => Promise<ReassessmentActionState>
@@ -93,14 +94,36 @@ describe("ReassessmentPanel", () => {
   beforeEach(() => action.mockReset());
   afterEach(cleanup);
 
-  it("displays successful evidence and sends only the case identifier", async () => {
+  it("displays successful evidence and submits signs as not assessed", async () => {
     action.mockResolvedValue(success());
     await submit();
     expect(await screen.findByText("Qualified minimum only")).toBeVisible();
     expect(screen.getByText(/heart rate bpm/).closest("li")).toHaveTextContent("80 → 90");
     expect(screen.getByText(/Reference:/)).toHaveTextContent("REVIEW-001");
     const submitted = action.mock.calls[0][1];
-    expect([...submitted.keys()]).toEqual(["case_id"]);
+    expect(submitted.get("case_id")).toBe("SYNTHETIC-1");
+    expect(submitted.get("sign_assessment")).toBe("not_assessed");
+    expect(submitted.getAll("signs")).toEqual([]);
+  });
+
+  it("submits assessed-none and selected chart signs explicitly", async () => {
+    action.mockResolvedValue(success());
+    const user = userEvent.setup();
+    render(<ReassessmentPanel caseId="SYNTHETIC-1" />);
+
+    await user.click(screen.getByLabelText("Assessed, none identified"));
+    await user.click(screen.getByRole("button", { name: "Request reassessment" }));
+    expect(action.mock.calls[0][1].get("sign_assessment")).toBe("assessed_none");
+    expect(action.mock.calls[0][1].getAll("signs")).toEqual([]);
+
+    await user.click(screen.getByLabelText("Assessed, signs identified"));
+    const selected = discriminatorGroups[0].signs.slice(0, 2);
+    await user.click(screen.getByLabelText(selected[0].chartText));
+    await user.click(screen.getByLabelText(selected[1].chartText));
+    await user.click(screen.getByRole("button", { name: "Request reassessment" }));
+    expect(action.mock.calls[1][1].getAll("signs")).toEqual(
+      selected.map((sign) => sign.signId),
+    );
   });
 
   it("shows loading and disables duplicate submission", async () => {
@@ -142,6 +165,43 @@ describe("ReassessmentPanel", () => {
     expect(screen.getByText("Missing: respiratory rate bpm")).toBeVisible();
   });
 
+  it("shows a complete proposal with recognised sign evidence", async () => {
+    const sign = discriminatorGroups[2].signs[0];
+    const result = response();
+    result.priority_status = "complete";
+    result.priority_result = {
+      ...result.priority_result!,
+      status: "complete",
+      priority: "urgent",
+      priority_at_least: null,
+      matched_sign_ids: [sign.signId],
+      reasons: [],
+    };
+    action.mockResolvedValue(success(result));
+    await submit();
+    expect(await screen.findByText("Complete deterministic proposal")).toBeVisible();
+    expect(screen.getByText(sign.chartText)).toBeVisible();
+    expect(screen.getByText(`(${sign.signId})`)).toBeVisible();
+  });
+
+  it("shows unknown sign evidence with abstention", async () => {
+    const result = response();
+    result.priority_status = "abstained";
+    result.priority_result = {
+      ...result.priority_result!,
+      status: "abstained",
+      priority: null,
+      priority_at_least: null,
+      unknown_sign_ids: ["DISC/NOT/A_REAL_SIGN"],
+      reasons: ["Unknown sign ids; nothing was guessed"],
+    };
+    action.mockResolvedValue(success(result));
+    await submit();
+    expect(await screen.findByText("Assessment abstained")).toBeVisible();
+    expect(screen.getByText("Unknown sign evidence caused abstention")).toBeVisible();
+    expect(screen.getByText("DISC/NOT/A_REAL_SIGN")).toBeVisible();
+  });
+
   it("shows optional explanation unavailability", async () => {
     action.mockResolvedValue(success(response({ explanation: null, explanation_error: "NOT_CONFIGURED" })));
     await submit();
@@ -151,7 +211,7 @@ describe("ReassessmentPanel", () => {
   it("does not treat HTTP success as confirmed review persistence", async () => {
     action.mockResolvedValue(success(response({ status: "review_submission_failed", review_request_id: null, review_submission_status: "unconfirmed", review_submission_error: "MCP_REVIEW_SUBMISSION_UNCONFIRMED" })));
     await submit();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Review persistence could not be verified");
+    expect(await screen.findByRole("alert")).toHaveTextContent("No new review has been confirmed");
     expect(screen.queryByText(/A pending review request was confirmed/)).not.toBeInTheDocument();
   });
 
