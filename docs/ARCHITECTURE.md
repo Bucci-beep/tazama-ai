@@ -37,7 +37,7 @@ must not be used to make real patient care decisions.
     SQLite: review requests, evidence, append-only audit and attestations
               |
               v
-    Read-only FastAPI  ->  Next.js dashboard (read-only)
+    FastAPI (synthetic data, no approval endpoints)  ->  Next.js dashboard
 
 The workflow stops at `await_clinician_review`. The model is given no tools and no
 approval authority.
@@ -79,7 +79,7 @@ FastMCP (SDK 1.x) over stdio. Custom tools:
 - Provenance is nonclinical and excluded from the deterministic idempotency fingerprint.
   A different timestamp on retry preserves the first pending review and its evidence.
 - The call has a bounded timeout and failure is nonblocking. It never supplies observation
-  timestamps, deadlines, scores or priorities.
+  timestamps, deadlines, scores or priorities. Tazama has no overdue-reassessment rule.
 - The maintained server is preferred to a local clock wrapper for its reusable MCP contract,
   IANA timezone validation and independent interoperability.
 
@@ -138,26 +138,32 @@ FastAPI over the configured local SQLite database:
   clinical priority or queue state.
 
 ### Dashboard (`web/`)
-Next.js, read-only. It shows persisted observations, backend status and a safety notice.
-It has no approve, edit or queue controls.
+Next.js. It lets a user record synthetic observations, request a reassessment, and view
+persisted timelines, evidence and backend status, with a safety notice. It has no approve,
+edit-priority or queue controls.
 
 ## Evidence and evaluation
 - `EVALS.md` and `tests/evals/` hold 14 passing cases and one documented unfixed failure
   (F01: a sign the nurse omits is not detected). It is left unfixed on purpose, because
   fixing it would need the model to infer signs and so to influence priority.
+- `data/demo/synthetic_cases_v1.json` holds three locked synthetic cases, tested in
+  `tests/test_synthetic_demo_cases.py` against the real scoring and comparison code:
+  A (stable: routine), B (observations changed: very urgent) and C (missing and off-chart
+  data: abstains).
 - Safety-boundary tests check that scoring never invents a priority.
 - Integration tests run a real MCP client against the real server over stdio.
 
 ## Known gaps
 - Review persistence allows only one pending review per observation. A later reassessment with
   changed nurse-assessed sign evidence is rejected rather than overwriting or versioning the
-  existing review.
-- The API does not yet expose pending review requests or a review's stored evidence, so
-  the dashboard shows observations only.
-- The default demo case has no nurse-assessed signs, so its priority is "at least
-  routine" rather than a complete proposal.
+  existing review, so signs must be assessed before the first review is submitted. Review
+  versioning is not implemented.
+- The API has no endpoint that lists pending review requests; evidence is returned by the
+  reassess response.
+- No overdue-reassessment rule exists. Time is captured as provenance only.
 - The model's task is deliberately narrow (selecting among pre-approved statements).
 - Approval is a demo attestation only.
+- F01 (see above) is a documented, unfixed limitation.
 
 ## Deployment restrictions
 This is a research demonstration. No real patient information may be entered. No
