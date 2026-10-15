@@ -8,6 +8,7 @@ A human-supervised agentic clinical triage research prototype for the Agentic AI
 
 - LangGraph coordinates an explicit, auditable workflow.
 - MCP exposes versioned tools with typed contracts.
+- The official `mcp-server-time` package supplies UTC workflow provenance over MCP.
 - Clinical triage scoring is deterministic and protocol-driven.
 - An optional local Ollama task selects from pre-approved evidence explanations; it cannot
   generate clinical claims or assign priority.
@@ -85,6 +86,17 @@ uv run python -m tazama.demo
 
 The demo uses synthetic data, leaves the review pending, records a demo identity attestation,
 and never changes clinical priority.
+
+## Borrowed MCP server
+
+Tazama calls the official Time MCP server's `get_current_time` tool over stdio with the
+timezone fixed to UTC. The result, or an explicit unavailable status, is stored only as
+workflow provenance in review evidence. It cannot affect observation chronology,
+reassessment timing, clinical scoring or priority, and failure does not block review.
+
+The server is pinned as `mcp-server-time==2026.10.10`. Using the maintained official server
+beats writing a local clock wrapper because it provides a reusable MCP contract, validated IANA
+timezone handling and independent protocol interoperability.
 
 ## Licensing
 

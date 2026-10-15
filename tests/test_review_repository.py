@@ -143,6 +143,41 @@ def test_retry_preserves_first_explanation_without_clinical_conflict(setup):
     assert second.evidence["explanation"] == {"model": "a"}
 
 
+def test_retry_preserves_first_workflow_provenance_without_conflict(setup):
+    _, reviews = setup
+    first = reviews.submit(
+        request(
+            evidence={
+                "reason": "Baseline only",
+                "workflow_provenance": {
+                    "time": {
+                        "status": "captured",
+                        "result": {"datetime": "2026-10-15T06:30:00Z"},
+                    }
+                },
+            }
+        )
+    )
+    second = reviews.submit(
+        request(
+            evidence={
+                "reason": "Baseline only",
+                "workflow_provenance": {
+                    "time": {
+                        "status": "tool_unavailable",
+                        "error": "MCP_TIME_TOOL_UNAVAILABLE",
+                    }
+                },
+            }
+        )
+    )
+
+    assert second.request_id == first.request_id
+    assert second.evidence["workflow_provenance"] == first.evidence[
+        "workflow_provenance"
+    ]
+
+
 def test_reinitialization_preserves_review_requests(setup):
     database, reviews = setup
     reviews.submit(request())

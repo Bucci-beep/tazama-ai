@@ -25,13 +25,13 @@ must not be used to make real patient care decisions.
               |
               v
     LangGraph workflow (open-source orchestration)
-      validate_input -> load_and_compare -> assess_priority
+      validate_input -> capture_time_context -> load_and_compare -> assess_priority
         -> explain_evidence -> submit_review -> await_clinician_review
-              |                       |
-              | MCP (stdio)           | local model (Ollama)
-              v                       v
-    Tazama MCP server          selects pre-approved explanation IDs only
-    (deterministic tools)
+              |                    |                       |
+              | borrowed MCP       | Tazama MCP (stdio)    | local model
+              v                    v                       v
+    Official Time MCP       deterministic tools     bounded Ollama task
+    (UTC provenance only)
               |
               v
     SQLite: review requests, evidence, append-only audit and attestations
@@ -69,6 +69,19 @@ FastMCP (SDK 1.x) over stdio. Custom tools:
 | `determine_priority` | read | Deterministic priority proposal from TEWS and signs. |
 | `submit_review_request` | **action** | Persists a pending review request with its evidence. Idempotent. Only "pending". |
 | `record_demo_attestation` | **action, gated** | Registered only when `TAZAMA_ENABLE_DEMO_ATTESTATION=1`. Demo only. |
+
+### Borrowed MCP server (`mcp-server-time`)
+- Official third-party server from the Model Context Protocol project, pinned to
+  `2026.10.10` and called over stdio.
+- `get_current_time` is called with `UTC` after successful workflow input validation.
+- Successful output or explicit tool failure is stored under `workflow_provenance` in
+  review evidence.
+- Provenance is nonclinical and excluded from the deterministic idempotency fingerprint.
+  A different timestamp on retry preserves the first pending review and its evidence.
+- The call has a bounded timeout and failure is nonblocking. It never supplies observation
+  timestamps, deadlines, scores or priorities.
+- The maintained server is preferred to a local clock wrapper for its reusable MCP contract,
+  IANA timezone validation and independent interoperability.
 
 ### Orchestration (`src/tazama/orchestration/`)
 LangGraph with typed state and conditional routing. MCP failures are treated as
@@ -119,7 +132,6 @@ It has no approve, edit or queue controls.
 - Integration tests run a real MCP client against the real server over stdio.
 
 ## Known gaps
-- No third-party ("borrowed") MCP server is wired in yet.
 - The API does not yet expose pending review requests or a review's stored evidence, so
   the dashboard shows observations only.
 - The default demo case has no nurse-assessed signs, so its priority is "at least

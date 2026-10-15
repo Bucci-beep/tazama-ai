@@ -11,6 +11,7 @@ from tazama.mcp.priority_contract import DeterminePriorityRequest
 from tazama.orchestration.mcp_history import compare_history_via_mcp
 from tazama.orchestration.mcp_priority import determine_priority_via_mcp
 from tazama.orchestration.mcp_review import submit_review_via_mcp
+from tazama.orchestration.mcp_time import TimeContext, get_current_utc_via_mcp
 from tazama.orchestration.state import TriageWorkflowState
 from tazama.patients.history_adapter import to_history_request
 from tazama.storage.observations import ObservationRepository
@@ -31,6 +32,7 @@ ReviewTool = Callable[
 ]
 PriorityTool = Callable[[DeterminePriorityRequest], Awaitable[PriorityResult]]
 ExplanationTool = Callable[[dict], Awaitable[dict]]
+TimeTool = Callable[[], Awaitable[TimeContext]]
 
 
 class MCPWorkflowState(TriageWorkflowState, total=False):
@@ -43,6 +45,7 @@ class MCPWorkflowState(TriageWorkflowState, total=False):
     priority_error: str | None
     explanation: dict | None
     explanation_error: str | None
+    workflow_provenance: dict | None
     review_submission_status: str | None
     review_request_id: str | None
     review_submission_error: str | None
@@ -64,6 +67,7 @@ def build_mcp_triage_graph(
     review_tool: ReviewTool | None = None,
     priority_tool: PriorityTool = determine_priority_via_mcp,
     explanation_tool: ExplanationTool | None = None,
+    time_tool: TimeTool = get_current_utc_via_mcp,
 ):
     """Compile an async graph that confirms review persistence via MCP."""
 
@@ -76,6 +80,29 @@ def build_mcp_triage_graph(
     submit_tool = review_tool if review_tool is not None else default_review_tool
 
     builder = StateGraph(MCPWorkflowState)
+
+    async def capture_time_context(state: MCPWorkflowState) -> dict:
+        """Capture nonclinical workflow provenance from a borrowed MCP server."""
+        try:
+            context = await time_tool()
+            provenance = {
+                "time": {
+                    "status": "captured",
+                    "server": "mcp-server-time",
+                    "tool": "get_current_time",
+                    "result": context.model_dump(mode="json"),
+                }
+            }
+        except Exception:  # noqa: BLE001
+            provenance = {
+                "time": {
+                    "status": "tool_unavailable",
+                    "server": "mcp-server-time",
+                    "tool": "get_current_time",
+                    "error": "MCP_TIME_TOOL_UNAVAILABLE",
+                }
+            }
+        return {"workflow_provenance": provenance}
 
     async def load_and_compare(state: MCPWorkflowState) -> dict:
         case_id = state["case_id"]
@@ -199,6 +226,7 @@ def build_mcp_triage_graph(
             "signs_assessed": state.get("signs") is not None,
             "explanation": state.get("explanation"),
             "explanation_error": state.get("explanation_error"),
+            "workflow_provenance": state.get("workflow_provenance"),
         }
 
         request = SubmitReviewRequest(
@@ -278,6 +306,7 @@ def build_mcp_triage_graph(
         }
 
     builder.add_node("validate_input", validate_input)
+    builder.add_node("capture_time_context", capture_time_context)
     builder.add_node("load_and_compare", load_and_compare)
     builder.add_node("assess_priority", assess_priority)
     builder.add_node("explain_evidence", explain_evidence)
@@ -291,8 +320,9 @@ def build_mcp_triage_graph(
     builder.add_conditional_edges(
         "validate_input",
         route_input,
-        {"load": "load_and_compare", "reject": "reject_input"},
+        {"load": "capture_time_context", "reject": "reject_input"},
     )
+    builder.add_edge("capture_time_context", "load_and_compare")
     builder.add_conditional_edges(
         "load_and_compare",
         route_observation,
