@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from tazama.clinical.history import CompareHistoryRequest, CompareHistoryResult
 from tazama.clinical.priority import PriorityResult
 from tazama.mcp.priority_contract import DeterminePriorityRequest
+from tazama.orchestration.mcp_audit import MCPAuditPersistenceError
 from tazama.orchestration.mcp_history import compare_history_via_mcp
 from tazama.orchestration.mcp_priority import determine_priority_via_mcp
 from tazama.orchestration.mcp_review import submit_review_via_mcp
@@ -38,6 +39,7 @@ TimeTool = Callable[[], Awaitable[TimeContext]]
 
 class MCPWorkflowState(TriageWorkflowState, total=False):
     workflow_run_id: str
+    mcp_audit_errors: list[str]
     signs: list[str] | None
     comparison_status: str | None
     comparison_result: dict | None
@@ -75,6 +77,14 @@ def build_mcp_triage_graph(
 
     builder = StateGraph(MCPWorkflowState)
 
+    def audit_errors_after_failure(
+        state: MCPWorkflowState, error: Exception, tool_name: str
+    ) -> list[str]:
+        errors = state.get("mcp_audit_errors", [])
+        if getattr(error, "audit_persistence_failed", False):
+            return [*errors, f"{tool_name}:MCP_AUDIT_PERSISTENCE_FAILED"]
+        return errors
+
     async def capture_time_context(state: MCPWorkflowState) -> dict:
         """Capture nonclinical workflow provenance from a borrowed MCP server."""
         workflow_run_id = str(uuid4())
@@ -95,7 +105,20 @@ def build_mcp_triage_graph(
                     "result": context.model_dump(mode="json"),
                 }
             }
-        except Exception:  # noqa: BLE001
+            audit_errors: list[str] = []
+        except MCPAuditPersistenceError as error:
+            context = error.result
+            provenance = {
+                "time": {
+                    "status": "captured",
+                    "server": "mcp-server-time",
+                    "tool": "get_current_time",
+                    "result": context.model_dump(mode="json"),
+                    "audit_status": "persistence_failed",
+                }
+            }
+            audit_errors = ["get_current_time:MCP_AUDIT_PERSISTENCE_FAILED"]
+        except Exception as error:  # noqa: BLE001
             provenance = {
                 "time": {
                     "status": "tool_unavailable",
@@ -104,7 +127,16 @@ def build_mcp_triage_graph(
                     "error": "MCP_TIME_TOOL_UNAVAILABLE",
                 }
             }
-        return {"workflow_run_id": workflow_run_id, "workflow_provenance": provenance}
+            audit_errors = audit_errors_after_failure(
+                state, error, "get_current_time"
+            )
+            if audit_errors:
+                provenance["time"]["audit_status"] = "persistence_failed"
+        return {
+            "workflow_run_id": workflow_run_id,
+            "workflow_provenance": provenance,
+            "mcp_audit_errors": audit_errors,
+        }
 
     async def load_and_compare(state: MCPWorkflowState) -> dict:
         case_id = state["case_id"]
@@ -136,6 +168,7 @@ def build_mcp_triage_graph(
 
         request = to_history_request(timeline)
 
+        audit_errors = state.get("mcp_audit_errors", [])
         try:
             result = (
                 await history_tool(request)
@@ -146,13 +179,22 @@ def build_mcp_triage_graph(
                     database_path=repository.database.database_path,
                 )
             )
-        except Exception:  # noqa: BLE001
+        except MCPAuditPersistenceError as error:
+            result = error.result
+            audit_errors = [
+                *audit_errors,
+                "compare_with_history:MCP_AUDIT_PERSISTENCE_FAILED",
+            ]
+        except Exception as error:  # noqa: BLE001
             # History-tool failure is not a reassuring comparison.
             return {
                 **metadata,
                 "comparison_status": "tool_unavailable",
                 "comparison_result": None,
                 "comparison_error": "MCP_HISTORY_TOOL_UNAVAILABLE",
+                "mcp_audit_errors": audit_errors_after_failure(
+                    state, error, "compare_with_history"
+                ),
             }
 
         if result.case_id != case_id:
@@ -168,6 +210,7 @@ def build_mcp_triage_graph(
             "comparison_status": result.status,
             "comparison_result": result.model_dump(mode="json"),
             "comparison_error": None,
+            "mcp_audit_errors": audit_errors,
         }
 
     def route_observation(
@@ -189,6 +232,7 @@ def build_mcp_triage_graph(
             observations=latest.observations,
             signs=state.get("signs"),
         )
+        audit_errors = state.get("mcp_audit_errors", [])
         try:
             result = (
                 await priority_tool(request)
@@ -199,16 +243,26 @@ def build_mcp_triage_graph(
                     database_path=repository.database.database_path,
                 )
             )
-        except Exception:  # noqa: BLE001
+        except MCPAuditPersistenceError as error:
+            result = error.result
+            audit_errors = [
+                *audit_errors,
+                "determine_priority:MCP_AUDIT_PERSISTENCE_FAILED",
+            ]
+        except Exception as error:  # noqa: BLE001
             return {
                 "priority_status": "tool_unavailable",
                 "priority_result": None,
                 "priority_error": "MCP_PRIORITY_TOOL_UNAVAILABLE",
+                "mcp_audit_errors": audit_errors_after_failure(
+                    state, error, "determine_priority"
+                ),
             }
         return {
             "priority_status": result.status,
             "priority_result": result.model_dump(mode="json"),
             "priority_error": None,
+            "mcp_audit_errors": audit_errors,
         }
 
     async def explain_evidence(state: MCPWorkflowState) -> dict:
@@ -255,6 +309,7 @@ def build_mcp_triage_graph(
             evidence=evidence,
         )
 
+        audit_errors = state.get("mcp_audit_errors", [])
         try:
             result = (
                 await review_tool(request)
@@ -265,6 +320,22 @@ def build_mcp_triage_graph(
                     workflow_run_id=state["workflow_run_id"],
                 )
             )
+        except MCPAuditPersistenceError as error:
+            result = error.result
+            audit_errors = [
+                *audit_errors,
+                "submit_review_request:MCP_AUDIT_PERSISTENCE_FAILED",
+            ]
+        except Exception as error:  # noqa: BLE001
+            return {
+                "review_submission_status": "unconfirmed",
+                "review_request_id": None,
+                "review_submission_error": "MCP_REVIEW_SUBMISSION_UNCONFIRMED",
+                "mcp_audit_errors": audit_errors_after_failure(
+                    state, error, "submit_review_request"
+                ),
+            }
+        try:
             if (
                 result.status != "pending"
                 or result.case_id != request.case_id
@@ -282,12 +353,14 @@ def build_mcp_triage_graph(
                 "review_submission_status": "unconfirmed",
                 "review_request_id": None,
                 "review_submission_error": "MCP_REVIEW_SUBMISSION_UNCONFIRMED",
+                "mcp_audit_errors": audit_errors,
             }
 
         return {
             "review_submission_status": "persisted",
             "review_request_id": result.request_id,
             "review_submission_error": None,
+            "mcp_audit_errors": audit_errors,
         }
 
     def route_submission(

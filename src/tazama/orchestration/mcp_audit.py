@@ -1,9 +1,7 @@
 """Reusable execution wrapper for audited MCP calls."""
 
 import json
-import sqlite3
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic_ns
@@ -27,6 +25,14 @@ class MCPToolError(RuntimeError):
 
 class MCPResponseError(RuntimeError):
     """The MCP response could not be validated."""
+
+
+class MCPAuditPersistenceError[T](RuntimeError):
+    """A successful MCP result whose audit record could not be persisted."""
+
+    def __init__(self, result: T) -> None:
+        super().__init__("MCP_AUDIT_PERSISTENCE_FAILED")
+        self.result = result
 
 
 def _status_for(error: Exception) -> MCPStatus:
@@ -54,8 +60,7 @@ async def audited_mcp_call[T](
         result = await operation()
     except Exception as error:
         completed_at = datetime.now(UTC)
-        # Never replace the tool failure with a secondary audit-write failure.
-        with suppress(sqlite3.Error):
+        try:
             MCPToolCallRepository(Database(database_path)).append(
                 MCPToolCall(
                     invocation_id=invocation_id,
@@ -70,20 +75,28 @@ async def audited_mcp_call[T](
                     duration_ms=max(0, (monotonic_ns() - started_ns) // 1_000_000),
                 )
             )
+        except Exception as audit_error:  # noqa: BLE001
+            error.add_note(
+                f"MCP audit persistence failed: {type(audit_error).__name__}"
+            )
+            error.audit_persistence_failed = True
         raise
     completed_at = datetime.now(UTC)
-    MCPToolCallRepository(Database(database_path)).append(
-        MCPToolCall(
-            invocation_id=invocation_id,
-            workflow_run_id=workflow_run_id,
-            server_name=server_name,
-            tool_name=tool_name,
-            started_at=started_at,
-            completed_at=completed_at,
-            input_arguments=sanitise(arguments),
-            output=sanitise(result),
-            status="success",
-            duration_ms=max(0, (monotonic_ns() - started_ns) // 1_000_000),
+    try:
+        MCPToolCallRepository(Database(database_path)).append(
+            MCPToolCall(
+                invocation_id=invocation_id,
+                workflow_run_id=workflow_run_id,
+                server_name=server_name,
+                tool_name=tool_name,
+                started_at=started_at,
+                completed_at=completed_at,
+                input_arguments=sanitise(arguments),
+                output=sanitise(result),
+                status="success",
+                duration_ms=max(0, (monotonic_ns() - started_ns) // 1_000_000),
+            )
         )
-    )
+    except Exception as error:
+        raise MCPAuditPersistenceError(result) from error
     return result

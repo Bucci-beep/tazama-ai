@@ -111,6 +111,9 @@ not create a duplicate review request.
 - `MCPToolCallRepository.get_by_workflow_run()` returns a run's calls ordered by start time and
   invocation ID. Logging remains local; it neither changes deterministic evidence nor sends
   clinical information to an observability service.
+- An audit-write failure is distinct from MCP execution. Successful validated tool results remain
+  usable and the workflow exposes `mcp_audit_errors`; failed MCP calls remain failures and are
+  annotated when their error record could not be persisted.
 
 ### Approval gate
 - A clinician decision is a separate, explicit action from proposing a priority.

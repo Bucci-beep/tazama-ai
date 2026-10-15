@@ -93,6 +93,8 @@ Every MCP invocation in the workflow is recorded locally in the append-only SQLi
 `mcp_tool_calls` table. Each row contains an invocation ID, workflow run ID, server and tool,
 UTC start/completion times, sanitised JSON input and output (or structured error), status, and
 duration in milliseconds. Secret-like fields are redacted; no external logging service is used.
+If SQLite cannot accept a record, the workflow preserves a completed MCP result but exposes the
+affected tool under `mcp_audit_errors`; it does not claim that the missing record was persisted.
 
 Application code can inspect a run in chronological order with
 `MCPToolCallRepository(database).get_by_workflow_run(workflow_run_id)`. For a local demo database,
