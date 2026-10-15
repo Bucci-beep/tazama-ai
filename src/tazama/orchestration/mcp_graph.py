@@ -2,6 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 from typing import Literal
+from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
@@ -36,6 +37,7 @@ TimeTool = Callable[[], Awaitable[TimeContext]]
 
 
 class MCPWorkflowState(TriageWorkflowState, total=False):
+    workflow_run_id: str
     signs: list[str] | None
     comparison_status: str | None
     comparison_result: dict | None
@@ -63,28 +65,28 @@ def route_input(state: MCPWorkflowState) -> Literal["load", "reject"]:
 
 def build_mcp_triage_graph(
     repository: ObservationRepository,
-    history_tool: HistoryTool = compare_history_via_mcp,
+    history_tool: HistoryTool | None = None,
     review_tool: ReviewTool | None = None,
-    priority_tool: PriorityTool = determine_priority_via_mcp,
+    priority_tool: PriorityTool | None = None,
     explanation_tool: ExplanationTool | None = None,
-    time_tool: TimeTool = get_current_utc_via_mcp,
+    time_tool: TimeTool | None = None,
 ):
     """Compile an async graph that confirms review persistence via MCP."""
-
-    async def default_review_tool(request: SubmitReviewRequest) -> ReviewRequest:
-        return await submit_review_via_mcp(
-            request,
-            repository.database.database_path,
-        )
-
-    submit_tool = review_tool if review_tool is not None else default_review_tool
 
     builder = StateGraph(MCPWorkflowState)
 
     async def capture_time_context(state: MCPWorkflowState) -> dict:
         """Capture nonclinical workflow provenance from a borrowed MCP server."""
+        workflow_run_id = str(uuid4())
         try:
-            context = await time_tool()
+            context = (
+                await time_tool()
+                if time_tool is not None
+                else await get_current_utc_via_mcp(
+                    workflow_run_id=workflow_run_id,
+                    database_path=repository.database.database_path,
+                )
+            )
             provenance = {
                 "time": {
                     "status": "captured",
@@ -102,7 +104,7 @@ def build_mcp_triage_graph(
                     "error": "MCP_TIME_TOOL_UNAVAILABLE",
                 }
             }
-        return {"workflow_provenance": provenance}
+        return {"workflow_run_id": workflow_run_id, "workflow_provenance": provenance}
 
     async def load_and_compare(state: MCPWorkflowState) -> dict:
         case_id = state["case_id"]
@@ -135,7 +137,15 @@ def build_mcp_triage_graph(
         request = to_history_request(timeline)
 
         try:
-            result = await history_tool(request)
+            result = (
+                await history_tool(request)
+                if history_tool is not None
+                else await compare_history_via_mcp(
+                    request,
+                    workflow_run_id=state["workflow_run_id"],
+                    database_path=repository.database.database_path,
+                )
+            )
         except Exception:  # noqa: BLE001
             # History-tool failure is not a reassuring comparison.
             return {
@@ -180,7 +190,15 @@ def build_mcp_triage_graph(
             signs=state.get("signs"),
         )
         try:
-            result = await priority_tool(request)
+            result = (
+                await priority_tool(request)
+                if priority_tool is not None
+                else await determine_priority_via_mcp(
+                    request,
+                    workflow_run_id=state["workflow_run_id"],
+                    database_path=repository.database.database_path,
+                )
+            )
         except Exception:  # noqa: BLE001
             return {
                 "priority_status": "tool_unavailable",
@@ -238,7 +256,15 @@ def build_mcp_triage_graph(
         )
 
         try:
-            result = await submit_tool(request)
+            result = (
+                await review_tool(request)
+                if review_tool is not None
+                else await submit_review_via_mcp(
+                    request,
+                    repository.database.database_path,
+                    workflow_run_id=state["workflow_run_id"],
+                )
+            )
             if (
                 result.status != "pending"
                 or result.case_id != request.case_id

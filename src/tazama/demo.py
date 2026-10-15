@@ -12,6 +12,7 @@ from tazama.orchestration.mcp_graph import build_mcp_triage_graph
 from tazama.orchestration.mcp_review import attest_review_via_mcp
 from tazama.patients.models import ObservationRecord
 from tazama.storage.database import Database
+from tazama.storage.mcp_audit import MCPToolCallRepository
 from tazama.storage.observations import ObservationRepository
 from tazama.storage.reviews import ReviewRepository, SubmitAttestation
 
@@ -78,7 +79,11 @@ async def run_demo(database_path: Path, explanation_tool=None) -> dict:
             action="approved",
         ),
         database_path,
+        workflow_run_id=first["workflow_run_id"],
     )
+    mcp_audit = MCPToolCallRepository(database)
+    first_run_calls = mcp_audit.get_by_workflow_run(first["workflow_run_id"])
+    retry_run_calls = mcp_audit.get_by_workflow_run(second["workflow_run_id"])
 
     with database.connect() as connection:
         audit_events = connection.execute(
@@ -119,6 +124,13 @@ async def run_demo(database_path: Path, explanation_tool=None) -> dict:
             }
             for action, actor_id, request_id in audit_events
         ],
+        "mcp_audit": {
+            "workflow_run_id": first["workflow_run_id"],
+            "tools": [call.tool_name for call in first_run_calls],
+            "statuses": [call.status for call in first_run_calls],
+            "retry_workflow_run_id": second["workflow_run_id"],
+            "retry_call_count": len(retry_run_calls),
+        },
         "priority_changed": False,
         "priority_change_basis": "No priority mutation operation exists",
         "clinician_attestation": {
@@ -142,6 +154,9 @@ async def run_demo(database_path: Path, explanation_tool=None) -> dict:
         or len(audit_events) != 1
         or audit_events[0][0] != "review.requested"
         or attestation.request_id != first["review_request_id"]
+        or len(first_run_calls) != 5
+        or len(retry_run_calls) != 4
+        or any(call.status != "success" for call in first_run_calls + retry_run_calls)
     ):
         raise RuntimeError("Synthetic end-to-end demonstration failed")
 

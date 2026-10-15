@@ -181,6 +181,44 @@ class Database:
 
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS mcp_tool_calls (
+                    invocation_id TEXT PRIMARY KEY,
+                    workflow_run_id TEXT NOT NULL CHECK (length(trim(workflow_run_id)) > 0),
+                    server_name TEXT NOT NULL CHECK (length(trim(server_name)) > 0),
+                    tool_name TEXT NOT NULL CHECK (length(trim(tool_name)) > 0),
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT NOT NULL,
+                    input_json TEXT NOT NULL CHECK (json_valid(input_json)),
+                    output_json TEXT CHECK (output_json IS NULL OR json_valid(output_json)),
+                    error_json TEXT CHECK (error_json IS NULL OR json_valid(error_json)),
+                    status TEXT NOT NULL CHECK (
+                        status IN ('success', 'tool_error', 'validation_error', 'transport_error')
+                    ),
+                    duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+                    CHECK ((status = 'success' AND output_json IS NOT NULL AND error_json IS NULL)
+                        OR (status != 'success' AND output_json IS NULL AND error_json IS NOT NULL))
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mcp_tool_calls_run_time
+                ON mcp_tool_calls(workflow_run_id, started_at, invocation_id)
+                """
+            )
+            for operation in ("UPDATE", "DELETE"):
+                connection.execute(
+                    f"""
+                    CREATE TRIGGER IF NOT EXISTS prevent_mcp_tool_call_{operation.lower()}
+                    BEFORE {operation} ON mcp_tool_calls
+                    BEGIN
+                        SELECT RAISE(ABORT, 'MCP tool call logs are append-only');
+                    END
+                    """
+                )
+
+            connection.execute(
+                """
                 CREATE TRIGGER IF NOT EXISTS
                     prevent_audit_event_delete
                 BEFORE DELETE ON audit_events

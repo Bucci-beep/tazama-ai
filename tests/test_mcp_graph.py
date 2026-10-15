@@ -6,11 +6,13 @@ from unittest.mock import Mock
 import pytest
 
 from tazama.clinical.history import CompareHistoryResult
+from tazama.clinical.priority import determine_priority
 from tazama.mcp.contracts import PatientObservations
 from tazama.orchestration.mcp_graph import build_mcp_triage_graph
 from tazama.orchestration.mcp_time import TimeContext
 from tazama.patients.models import ObservationRecord, PatientTimeline
 from tazama.storage.database import Database
+from tazama.storage.mcp_audit import MCPToolCallRepository
 from tazama.storage.observations import ObservationRepository
 from tazama.storage.reviews import ReviewRepository, ReviewRequest
 
@@ -246,10 +248,14 @@ async def test_time_mcp_failure_is_explicit_and_nonblocking():
         received.append(request)
         return await fake_review(request)
 
+    async def priority(request):
+        return determine_priority(request.observations, request.signs)
+
     graph = build_mcp_triage_graph(
         repository_for(2),
         fake_history,
         review,
+        priority_tool=priority,
         time_tool=broken_time,
     )
     result = await graph.ainvoke(initial_state())
@@ -375,3 +381,18 @@ async def test_real_mcp_history_and_review_submission(tmp_path):
         ).fetchone()[0]
 
     assert event_count == 1
+
+    first_calls = MCPToolCallRepository(database).get_by_workflow_run(
+        first["workflow_run_id"]
+    )
+    second_calls = MCPToolCallRepository(database).get_by_workflow_run(
+        second["workflow_run_id"]
+    )
+    assert first["workflow_run_id"] != second["workflow_run_id"]
+    assert [call.tool_name for call in first_calls] == [
+        "get_current_time",
+        "compare_with_history",
+        "determine_priority",
+        "submit_review_request",
+    ]
+    assert all(call.status == "success" for call in first_calls + second_calls)
