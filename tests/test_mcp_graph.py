@@ -8,6 +8,7 @@ import pytest
 from tazama.clinical.history import CompareHistoryResult
 from tazama.mcp.contracts import PatientObservations
 from tazama.orchestration.mcp_graph import build_mcp_triage_graph
+from tazama.orchestration.mcp_time import TimeContext
 from tazama.patients.models import ObservationRecord, PatientTimeline
 from tazama.storage.database import Database
 from tazama.storage.observations import ObservationRepository
@@ -69,6 +70,15 @@ async def fake_review(request):
     )
 
 
+async def fake_time():
+    return TimeContext(
+        timezone="UTC",
+        datetime=datetime(2026, 10, 15, 6, 30, tzinfo=UTC),
+        day_of_week="Thursday",
+        is_dst=False,
+    )
+
+
 @pytest.mark.asyncio
 async def test_comparison_uses_latest_two_observations():
     received = []
@@ -77,7 +87,9 @@ async def test_comparison_uses_latest_two_observations():
         received.append(request)
         return await fake_history(request)
 
-    graph = build_mcp_triage_graph(repository_for(3), history, fake_review)
+    graph = build_mcp_triage_graph(
+        repository_for(3), history, fake_review, time_tool=fake_time
+    )
     result = await graph.ainvoke(initial_state())
 
     assert received[0].before.obs_id == "OBS-2"
@@ -93,7 +105,9 @@ async def test_empty_timeline_never_submits_review():
     async def forbidden(request):
         raise AssertionError("No MCP call should occur")
 
-    graph = build_mcp_triage_graph(repository_for(0), forbidden, forbidden)
+    graph = build_mcp_triage_graph(
+        repository_for(0), forbidden, forbidden, time_tool=fake_time
+    )
     result = await graph.ainvoke(initial_state())
 
     assert result["comparison_status"] == "insufficient_history"
@@ -113,7 +127,9 @@ async def test_history_failure_still_requests_review():
         received.append(request)
         return await fake_review(request)
 
-    graph = build_mcp_triage_graph(repository_for(2), broken_history, review)
+    graph = build_mcp_triage_graph(
+        repository_for(2), broken_history, review, time_tool=fake_time
+    )
     result = await graph.ainvoke(initial_state())
 
     assert result["comparison_status"] == "tool_unavailable"
@@ -136,7 +152,7 @@ async def test_priority_failure_is_persisted_as_unavailable_not_negative():
         return await fake_review(request)
 
     graph = build_mcp_triage_graph(
-        repository_for(2), fake_history, review, broken_priority
+        repository_for(2), fake_history, review, broken_priority, time_tool=fake_time
     )
     result = await graph.ainvoke(initial_state())
 
@@ -167,6 +183,7 @@ async def test_bounded_explanation_is_in_persisted_review_evidence():
         fake_history,
         review,
         explanation_tool=explain,
+        time_tool=fake_time,
     )
     result = await graph.ainvoke(initial_state())
 
@@ -178,13 +195,88 @@ async def test_bounded_explanation_is_in_persisted_review_evidence():
 
 
 @pytest.mark.asyncio
+async def test_time_mcp_provenance_is_persisted_without_affecting_priority():
+    received_reviews = []
+    received_priorities = []
+
+    async def review(request):
+        received_reviews.append(request)
+        return await fake_review(request)
+
+    async def priority(request):
+        received_priorities.append(request)
+        from tazama.clinical.priority import determine_priority
+
+        return determine_priority(request.observations, request.signs)
+
+    graph = build_mcp_triage_graph(
+        repository_for(2),
+        fake_history,
+        review,
+        priority,
+        time_tool=fake_time,
+    )
+    result = await graph.ainvoke(initial_state())
+
+    provenance = received_reviews[0].evidence["workflow_provenance"]["time"]
+    assert provenance == {
+        "status": "captured",
+        "server": "mcp-server-time",
+        "tool": "get_current_time",
+        "result": {
+            "timezone": "UTC",
+            "datetime": "2026-10-15T06:30:00Z",
+            "day_of_week": "Thursday",
+            "is_dst": False,
+        },
+    }
+    assert received_priorities[0].case_id == "CASE-MCP-001"
+    assert result["priority_status"] == "minimum_only"
+    assert result["status"] == "awaiting_clinician_review"
+
+
+@pytest.mark.asyncio
+async def test_time_mcp_failure_is_explicit_and_nonblocking():
+    async def broken_time():
+        raise TimeoutError("Time MCP did not respond")
+
+    received = []
+
+    async def review(request):
+        received.append(request)
+        return await fake_review(request)
+
+    graph = build_mcp_triage_graph(
+        repository_for(2),
+        fake_history,
+        review,
+        time_tool=broken_time,
+    )
+    result = await graph.ainvoke(initial_state())
+
+    assert received[0].evidence["workflow_provenance"] == {
+        "time": {
+            "status": "tool_unavailable",
+            "server": "mcp-server-time",
+            "tool": "get_current_time",
+            "error": "MCP_TIME_TOOL_UNAVAILABLE",
+        }
+    }
+    assert result["priority_status"] == "minimum_only"
+    assert result["review_submission_status"] == "persisted"
+    assert result["status"] == "awaiting_clinician_review"
+
+
+@pytest.mark.asyncio
 async def test_invalid_case_never_queries_repository_or_mcp():
     repository = repository_for(2)
 
     async def forbidden(request):
         raise AssertionError("MCP must not be called")
 
-    graph = build_mcp_triage_graph(repository, forbidden, forbidden)
+    graph = build_mcp_triage_graph(
+        repository, forbidden, forbidden, time_tool=forbidden
+    )
     result = await graph.ainvoke(initial_state("  "))
 
     repository.get_timeline.assert_not_called()
@@ -200,7 +292,9 @@ async def test_mismatched_history_case_is_not_reassuring():
             status="no_differences",
         )
 
-    graph = build_mcp_triage_graph(repository_for(2), wrong_history, fake_review)
+    graph = build_mcp_triage_graph(
+        repository_for(2), wrong_history, fake_review, time_tool=fake_time
+    )
     result = await graph.ainvoke(initial_state())
 
     assert result["comparison_status"] == "tool_unavailable"
@@ -214,7 +308,9 @@ async def test_review_submission_failure_is_not_reported_as_queued():
     async def broken_review(request):
         raise RuntimeError("MCP connection lost")
 
-    graph = build_mcp_triage_graph(repository_for(2), fake_history, broken_review)
+    graph = build_mcp_triage_graph(
+        repository_for(2), fake_history, broken_review, time_tool=fake_time
+    )
     result = await graph.ainvoke(initial_state())
 
     assert result["status"] == "review_submission_failed"
@@ -236,7 +332,9 @@ async def test_mismatched_review_response_fails_closed():
             evidence=request.evidence,
         )
 
-    graph = build_mcp_triage_graph(repository_for(2), fake_history, wrong_review)
+    graph = build_mcp_triage_graph(
+        repository_for(2), fake_history, wrong_review, time_tool=fake_time
+    )
     result = await graph.ainvoke(initial_state())
 
     assert result["status"] == "review_submission_failed"

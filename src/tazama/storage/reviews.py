@@ -16,7 +16,11 @@ def deterministic_evidence(evidence: dict) -> dict:
     return {
         key: value
         for key, value in evidence.items()
-        if key not in {"explanation", "explanation_error"}
+        if key not in {
+            "explanation",
+            "explanation_error",
+            "workflow_provenance",
+        }
     }
 
 
