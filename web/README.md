@@ -1,8 +1,8 @@
 # Tazama dashboard
 
-Read-only Next.js dashboard for the Tazama synthetic-data research prototype.
-It checks backend health and retrieves persisted observation timelines without
-performing scoring or clinical interpretation.
+Next.js dashboard for the Tazama synthetic-data research prototype. It checks
+backend health, records baseline and reassessment observations, and retrieves
+persisted timelines without performing scoring or clinical interpretation.
 
 ## Run locally
 
