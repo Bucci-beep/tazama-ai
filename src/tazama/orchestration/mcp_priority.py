@@ -18,7 +18,9 @@ from tazama.orchestration.mcp_audit import (
 
 async def determine_priority_via_mcp(
     request: DeterminePriorityRequest,
-    *, workflow_run_id: str, database_path: str | Path,
+    *,
+    workflow_run_id: str,
+    database_path: str | Path,
 ) -> PriorityResult:
     """Call the real deterministic priority MCP tool."""
     server = StdioServerParameters(
@@ -27,10 +29,16 @@ async def determine_priority_via_mcp(
     )
 
     arguments = {"request": request.model_dump(mode="json")}
+
     async def operation() -> PriorityResult:
-        async with (stdio_client(server) as (read, write), ClientSession(read, write) as session):
+        async with (
+            stdio_client(server) as (read, write),
+            ClientSession(read, write) as session,
+        ):
             await session.initialize()
-            response = await session.call_tool("determine_priority", arguments=arguments)
+            response = await session.call_tool(
+                "determine_priority", arguments=arguments
+            )
         if response.isError:
             raise MCPToolError("MCP_PRIORITY_TOOL_ERROR")
         payload = response.structuredContent
@@ -41,8 +49,13 @@ async def determine_priority_via_mcp(
         if isinstance(payload, dict) and "result" in payload:
             payload = payload["result"]
         return PriorityResult.model_validate(payload)
+
     return await audited_mcp_call(
-        database_path=database_path, workflow_run_id=workflow_run_id,
-        server_name="tazama-clinical", tool_name="determine_priority",
-        arguments=arguments, operation=operation,
+        database_path=database_path,
+        workflow_run_id=workflow_run_id,
+        server_name="tazama-clinical",
+        tool_name="determine_priority",
+        arguments=arguments,
+        operation=operation,
+        timeout_seconds=5.0,
     )

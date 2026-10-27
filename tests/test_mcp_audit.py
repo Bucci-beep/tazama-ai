@@ -1,5 +1,6 @@
 """Focused MCP audit logging tests."""
 
+import asyncio
 import sqlite3
 
 import pytest
@@ -92,13 +93,13 @@ async def test_failed_call_preserves_mcp_error_when_audit_write_also_fails(
         )
 
     assert caught.value.audit_persistence_failed is True
-    assert caught.value.__notes__ == [
-        "MCP audit persistence failed: OperationalError"
-    ]
+    assert caught.value.__notes__ == ["MCP audit persistence failed: OperationalError"]
 
 
 @pytest.mark.asyncio
-async def test_failed_call_is_sanitised_correlated_and_does_not_change_handling(tmp_path):
+async def test_failed_call_is_sanitised_correlated_and_does_not_change_handling(
+    tmp_path,
+):
     database = Database(tmp_path / "audit.sqlite3")
     database.initialize()
 
@@ -141,3 +142,30 @@ def test_mcp_audit_table_is_append_only(tmp_path):
         )
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             connection.execute("DELETE FROM mcp_tool_calls")
+
+
+@pytest.mark.asyncio
+async def test_mcp_operation_timeout_is_audited(tmp_path):
+    database = Database(tmp_path / "timeout.sqlite3")
+    database.initialize()
+
+    async def hanging_operation():
+        await asyncio.Event().wait()
+
+    with pytest.raises(TimeoutError):
+        await audited_mcp_call(
+            database_path=database.database_path,
+            workflow_run_id="RUN-TIMEOUT-001",
+            server_name="synthetic-test-server",
+            tool_name="hanging_tool",
+            arguments={"case_id": "SYNTHETIC-001"},
+            operation=hanging_operation,
+            timeout_seconds=0.05,
+        )
+
+    calls = MCPToolCallRepository(database).get_by_workflow_run("RUN-TIMEOUT-001")
+
+    assert len(calls) == 1
+    assert calls[0].status == "transport_error"
+    assert calls[0].error["type"] == "TimeoutError"
+    assert calls[0].duration_ms >= 0
