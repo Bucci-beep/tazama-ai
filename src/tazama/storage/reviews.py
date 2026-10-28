@@ -16,7 +16,8 @@ def deterministic_evidence(evidence: dict) -> dict:
     return {
         key: value
         for key, value in evidence.items()
-        if key not in {
+        if key
+        not in {
             "explanation",
             "explanation_error",
             "workflow_provenance",
@@ -349,6 +350,32 @@ class ReviewRepository:
                 ),
             )
         return record
+
+    def get_by_observation_id(self, observation_id: str) -> ReviewRequest | None:
+        """Retrieve an existing review by observation ID without modifying it."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT request_id, case_id, observation_id, status,
+                       created_at, comparison_status, evidence_json
+                FROM review_requests
+                WHERE observation_id = ?
+                """,
+                (observation_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return ReviewRequest(
+            request_id=row[0],
+            case_id=row[1],
+            observation_id=row[2],
+            status=row[3],
+            created_at=datetime.fromisoformat(row[4]),
+            comparison_status=row[5],
+            evidence=json.loads(row[6]),
+        )
 
     def get_pending(self) -> list[ReviewRequest]:
         """Return pending requests in chronological order."""

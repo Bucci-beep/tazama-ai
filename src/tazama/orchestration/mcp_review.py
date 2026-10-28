@@ -26,7 +26,8 @@ from tazama.storage.reviews import (
 async def submit_review_via_mcp(
     request: SubmitReviewRequest,
     database_path: str | Path,
-    *, workflow_run_id: str | None = None,
+    *,
+    workflow_run_id: str | None = None,
 ) -> ReviewRequest:
     """Submit evidence through MCP without approving a clinical decision."""
     path = Path(database_path).expanduser().resolve()
@@ -44,10 +45,16 @@ async def submit_review_via_mcp(
     )
 
     arguments = {"request": request.model_dump(mode="json")}
+
     async def operation() -> ReviewRequest:
-        async with (stdio_client(server) as (read, write), ClientSession(read, write) as session):
+        async with (
+            stdio_client(server) as (read, write),
+            ClientSession(read, write) as session,
+        ):
             await session.initialize()
-            response = await session.call_tool("submit_review_request", arguments=arguments)
+            response = await session.call_tool(
+                "submit_review_request", arguments=arguments
+            )
         if response.isError:
             raise MCPToolError("MCP_REVIEW_SUBMISSION_FAILED")
         payload = response.structuredContent
@@ -62,22 +69,29 @@ async def submit_review_via_mcp(
             result.case_id != request.case_id
             or result.observation_id != request.observation_id
             or result.comparison_status != request.comparison_status
-            or deterministic_evidence(result.evidence) != deterministic_evidence(request.evidence)
+            or deterministic_evidence(result.evidence)
+            != deterministic_evidence(request.evidence)
             or result.status != "pending"
         ):
             raise MCPResponseError("MCP_REVIEW_RESPONSE_MISMATCH")
         return result
+
     return await audited_mcp_call(
-        database_path=path, workflow_run_id=workflow_run_id or str(uuid4()),
-        server_name="tazama-clinical", tool_name="submit_review_request",
-        arguments=arguments, operation=operation,
+        database_path=path,
+        workflow_run_id=workflow_run_id or str(uuid4()),
+        server_name="tazama-clinical",
+        tool_name="submit_review_request",
+        arguments=arguments,
+        operation=operation,
+        timeout_seconds=5.0,
     )
 
 
 async def attest_review_via_mcp(
     request: SubmitAttestation,
     database_path: str | Path,
-    *, workflow_run_id: str | None = None,
+    *,
+    workflow_run_id: str | None = None,
 ) -> ReviewAttestation:
     """Record an asserted demo identity through the real MCP transport."""
     path = Path(database_path).expanduser().resolve()
@@ -93,10 +107,16 @@ async def attest_review_via_mcp(
         },
     )
     arguments = {"request": request.model_dump(mode="json")}
+
     async def operation() -> ReviewAttestation:
-        async with (stdio_client(server) as (read, write), ClientSession(read, write) as session):
+        async with (
+            stdio_client(server) as (read, write),
+            ClientSession(read, write) as session,
+        ):
             await session.initialize()
-            response = await session.call_tool("record_demo_attestation", arguments=arguments)
+            response = await session.call_tool(
+                "record_demo_attestation", arguments=arguments
+            )
         if response.isError:
             raise MCPToolError("MCP_REVIEW_ATTESTATION_FAILED")
         payload = response.structuredContent
@@ -107,8 +127,12 @@ async def attest_review_via_mcp(
         if isinstance(payload, dict) and "result" in payload:
             payload = payload["result"]
         return ReviewAttestation.model_validate_json(json.dumps(payload))
+
     return await audited_mcp_call(
-        database_path=path, workflow_run_id=workflow_run_id or str(uuid4()),
-        server_name="tazama-clinical", tool_name="record_demo_attestation",
-        arguments=arguments, operation=operation,
+        database_path=path,
+        workflow_run_id=workflow_run_id or str(uuid4()),
+        server_name="tazama-clinical",
+        tool_name="record_demo_attestation",
+        arguments=arguments,
+        operation=operation,
     )

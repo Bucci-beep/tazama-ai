@@ -424,6 +424,263 @@ async def test_successful_review_is_confirmed_when_only_audit_write_fails(
         "determine_priority:MCP_AUDIT_PERSISTENCE_FAILED",
         "submit_review_request:MCP_AUDIT_PERSISTENCE_FAILED",
     ]
-    assert ReviewRepository(database).get_pending()[0].request_id == result[
-        "review_request_id"
-    ]
+    assert (
+        ReviewRepository(database).get_pending()[0].request_id
+        == result["review_request_id"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_review_timeout_reconciles_matching_persisted_request(
+    tmp_path, monkeypatch
+):
+    database = Database(tmp_path / "review-timeout-persisted.sqlite3")
+    database.initialize()
+    repository = ObservationRepository(database)
+
+    for record in make_timeline(2).records:
+        repository.save(record)
+
+    reviews = ReviewRepository(database)
+    reviews.initialize()
+    submitted = []
+
+    async def persist_then_timeout(request, database_path, *, workflow_run_id):
+        saved = reviews.submit(request)
+        submitted.append(saved.request_id)
+        raise TimeoutError("Synthetic lost MCP response")
+
+    async def priority(request):
+        return determine_priority(request)
+
+    monkeypatch.setattr(
+        "tazama.orchestration.mcp_graph.submit_review_via_mcp",
+        persist_then_timeout,
+    )
+
+    graph = build_mcp_triage_graph(
+        repository,
+        history_tool=fake_history,
+        priority_tool=priority,
+        time_tool=fake_time,
+    )
+
+    result = await graph.ainvoke(initial_state())
+
+    assert result["review_submission_status"] == "persisted"
+    assert result["status"] == "awaiting_clinician_review"
+    assert result["review_request_id"] == submitted[0]
+    assert len(reviews.get_pending()) == 1
+
+    with database.connect() as connection:
+        event_count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert event_count == 1
+
+
+@pytest.mark.asyncio
+async def test_review_timeout_without_persistence_remains_unconfirmed(
+    tmp_path, monkeypatch
+):
+    database = Database(tmp_path / "review-timeout-absent.sqlite3")
+    database.initialize()
+    repository = ObservationRepository(database)
+
+    for record in make_timeline(2).records:
+        repository.save(record)
+
+    reviews = ReviewRepository(database)
+    reviews.initialize()
+
+    async def timeout_before_persistence(request, database_path, *, workflow_run_id):
+        raise TimeoutError("Synthetic MCP timeout before persistence")
+
+    async def priority(request):
+        return determine_priority(request)
+
+    monkeypatch.setattr(
+        "tazama.orchestration.mcp_graph.submit_review_via_mcp",
+        timeout_before_persistence,
+    )
+
+    graph = build_mcp_triage_graph(
+        repository,
+        history_tool=fake_history,
+        priority_tool=priority,
+        time_tool=fake_time,
+    )
+
+    result = await graph.ainvoke(initial_state())
+
+    assert result["review_submission_status"] == "unconfirmed"
+    assert result["review_request_id"] is None
+    assert result["review_submission_error"] == ("MCP_REVIEW_SUBMISSION_UNCONFIRMED")
+    assert result["status"] == "review_submission_failed"
+    assert reviews.get_pending() == []
+
+    with database.connect() as connection:
+        event_count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert event_count == 0
+
+
+@pytest.mark.asyncio
+async def test_review_timeout_rejects_conflicting_persisted_evidence(
+    tmp_path, monkeypatch
+):
+    database = Database(tmp_path / "review-timeout-conflict.sqlite3")
+    database.initialize()
+    repository = ObservationRepository(database)
+
+    for record in make_timeline(2).records:
+        repository.save(record)
+
+    reviews = ReviewRepository(database)
+    reviews.initialize()
+
+    async def conflicting_persistence_then_timeout(
+        request, database_path, *, workflow_run_id
+    ):
+        conflicting = request.model_copy(
+            update={"comparison_status": "conflicting_status"}
+        )
+        reviews.submit(conflicting)
+        raise TimeoutError("Synthetic lost MCP response")
+
+    async def priority(request):
+        return determine_priority(request)
+
+    monkeypatch.setattr(
+        "tazama.orchestration.mcp_graph.submit_review_via_mcp",
+        conflicting_persistence_then_timeout,
+    )
+
+    graph = build_mcp_triage_graph(
+        repository,
+        history_tool=fake_history,
+        priority_tool=priority,
+        time_tool=fake_time,
+    )
+
+    result = await graph.ainvoke(initial_state())
+
+    assert result["review_submission_status"] == "unconfirmed"
+    assert result["review_request_id"] is None
+    assert result["status"] == "review_submission_failed"
+
+    saved = reviews.get_by_observation_id("OBS-2")
+    assert saved is not None
+    assert saved.comparison_status == "conflicting_status"
+
+    with database.connect() as connection:
+        event_count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert event_count == 1
+
+
+@pytest.mark.asyncio
+async def test_review_timeout_reconciliation_lookup_failure(tmp_path, monkeypatch):
+    database = Database(tmp_path / "review-timeout-lookup-failure.sqlite3")
+    database.initialize()
+    repository = ObservationRepository(database)
+
+    for record in make_timeline(2).records:
+        repository.save(record)
+
+    reviews = ReviewRepository(database)
+    reviews.initialize()
+
+    async def timeout_submission(request, database_path, *, workflow_run_id):
+        raise TimeoutError("Synthetic lost MCP response")
+
+    def failed_lookup(self, observation_id):
+        raise sqlite3.OperationalError("Synthetic database lookup failure")
+
+    async def priority(request):
+        return determine_priority(request)
+
+    monkeypatch.setattr(
+        "tazama.orchestration.mcp_graph.submit_review_via_mcp",
+        timeout_submission,
+    )
+    monkeypatch.setattr(
+        ReviewRepository,
+        "get_by_observation_id",
+        failed_lookup,
+    )
+
+    graph = build_mcp_triage_graph(
+        repository,
+        history_tool=fake_history,
+        priority_tool=priority,
+        time_tool=fake_time,
+    )
+
+    result = await graph.ainvoke(initial_state())
+
+    assert result["review_submission_status"] == "unconfirmed"
+    assert result["review_request_id"] is None
+    assert result["status"] == "review_submission_failed"
+    assert (
+        "submit_review_request:RECONCILIATION_LOOKUP_FAILED"
+        in result["mcp_audit_errors"]
+    )
+
+    with database.connect() as connection:
+        event_count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert event_count == 0
+
+
+@pytest.mark.asyncio
+async def test_injected_review_timeout_does_not_reconcile(tmp_path, monkeypatch):
+    database = Database(tmp_path / "injected-review-timeout.sqlite3")
+    database.initialize()
+    repository = ObservationRepository(database)
+
+    for record in make_timeline(2).records:
+        repository.save(record)
+
+    reviews = ReviewRepository(database)
+    reviews.initialize()
+    lookup_calls = []
+
+    def unexpected_lookup(self, observation_id):
+        lookup_calls.append(observation_id)
+        raise AssertionError("Injected review tools must not reconcile")
+
+    async def timeout_review(request):
+        raise TimeoutError("Synthetic injected review timeout")
+
+    async def priority(request):
+        return determine_priority(request)
+
+    monkeypatch.setattr(
+        ReviewRepository,
+        "get_by_observation_id",
+        unexpected_lookup,
+    )
+
+    graph = build_mcp_triage_graph(
+        repository,
+        history_tool=fake_history,
+        review_tool=timeout_review,
+        priority_tool=priority,
+        time_tool=fake_time,
+    )
+
+    result = await graph.ainvoke(initial_state())
+
+    assert result["review_submission_status"] == "unconfirmed"
+    assert result["review_request_id"] is None
+    assert result["status"] == "review_submission_failed"
+    assert lookup_calls == []
+    assert reviews.get_pending() == []
