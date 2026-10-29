@@ -1,3 +1,4 @@
+import { DueReassessments } from "@/components/dashboard/due-reassessments";
 import { Suspense } from "react";
 import { BackendStatus } from "@/components/dashboard/backend-status";
 import { CaseObservations } from "@/components/dashboard/case-observations";
@@ -235,6 +236,24 @@ export default function Home({
               }
             >
               <BackendStatus />
+            </Suspense>
+
+            <Suspense
+              fallback={
+                <section
+                  role="status"
+                  className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8"
+                >
+                  <h2 className="text-lg font-semibold">
+                    Overdue reassessment obligations
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Loading persisted reassessment schedules...
+                  </p>
+                </section>
+              }
+            >
+              <DueReassessments />
             </Suspense>
 
             <Suspense
