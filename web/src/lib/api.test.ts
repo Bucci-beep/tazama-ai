@@ -124,3 +124,102 @@ describe("requestCaseReassessment response validation", () => {
     );
   });
 });
+
+describe("getDueReassessments response validation", () => {
+  const asOf = "2026-10-29T12:00:00+00:00";
+
+  const obligation = {
+    obligation_id: "OBL-SYNTHETIC-1",
+    case_id: "SYNTHETIC-API-1",
+    created_at: "2026-10-29T09:00:00+00:00",
+    due_at: "2026-10-29T11:00:00+00:00",
+    status: "scheduled",
+    policy_reference: "SYNTHETIC-TEST",
+  };
+
+  async function requestWith(payload: unknown, status = 200) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => payload,
+      }),
+    );
+
+    const { getDueReassessments } = await import("./api");
+    return getDueReassessments();
+  }
+
+  it("accepts a valid overdue obligation", async () => {
+    const result = await requestWith({
+      as_of: asOf,
+      obligations: [obligation],
+    });
+
+    expect(result.status).toBe("available");
+    if (result.status === "available") {
+      expect(result.obligations).toHaveLength(1);
+      expect(result.obligations[0].case_id).toBe("SYNTHETIC-API-1");
+    }
+  });
+
+  it("accepts an empty queue", async () => {
+    const result = await requestWith({
+      as_of: asOf,
+      obligations: [],
+    });
+
+    expect(result).toEqual({
+      status: "available",
+      as_of: asOf,
+      obligations: [],
+    });
+  });
+
+  it.each([
+    ["missing timestamp", { obligations: [obligation] }],
+    ["naive timestamp", { as_of: "2026-10-29T12:00:00", obligations: [obligation] }],
+    ["missing obligations", { as_of: asOf }],
+    ["invalid obligation", { as_of: asOf, obligations: [{}] }],
+    ["completed obligation", {
+      as_of: asOf,
+      obligations: [{ ...obligation, status: "completed" }],
+    }],
+    ["future obligation", {
+      as_of: asOf,
+      obligations: [{ ...obligation, due_at: "2026-10-29T13:00:00+00:00" }],
+    }],
+    ["duplicate obligations", {
+      as_of: asOf,
+      obligations: [obligation, obligation],
+    }],
+  ])("rejects %s", async (_label, payload) => {
+    const result = await requestWith(payload);
+    expect(result.status).toBe("unavailable");
+  });
+
+  it("reports HTTP 503 as unavailable", async () => {
+    const result = await requestWith(
+      { detail: "Storage unavailable" },
+      503,
+    );
+
+    expect(result).toEqual({
+      status: "unavailable",
+      reason: "API returned HTTP 503",
+    });
+  });
+
+  it("reports network failures as unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("Connection refused")),
+    );
+
+    const { getDueReassessments } = await import("./api");
+    const result = await getDueReassessments();
+
+    expect(result.status).toBe("unavailable");
+  });
+});

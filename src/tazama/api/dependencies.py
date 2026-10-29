@@ -11,6 +11,7 @@ from tazama.api.reassessment import ReassessmentService
 from tazama.orchestration.explanation import explain_evidence_with_ollama
 from tazama.storage.database import Database
 from tazama.storage.observations import ObservationRepository
+from tazama.storage.rechecks import RecheckRepository
 
 
 def get_observation_repository() -> ObservationRepository:
@@ -60,4 +61,17 @@ def get_reassessment_service(
 ReassessmentServiceDependency = Annotated[
     ReassessmentService,
     Depends(get_reassessment_service),
+]
+
+
+def get_recheck_repository(
+    repository: ObservationRepositoryDependency,
+) -> RecheckRepository:
+    """Reuse the validated database for reassessment obligations."""
+    return RecheckRepository(repository.database)
+
+
+RecheckRepositoryDependency = Annotated[
+    RecheckRepository,
+    Depends(get_recheck_repository),
 ]
