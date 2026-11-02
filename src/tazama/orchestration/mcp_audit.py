@@ -1,5 +1,6 @@
 """Reusable execution wrapper for audited MCP calls."""
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -38,7 +39,9 @@ class MCPAuditPersistenceError[T](RuntimeError):
 def _status_for(error: Exception) -> MCPStatus:
     if isinstance(error, MCPToolError):
         return "tool_error"
-    if isinstance(error, (MCPResponseError, ValidationError, json.JSONDecodeError, ValueError)):
+    if isinstance(
+        error, (MCPResponseError, ValidationError, json.JSONDecodeError, ValueError)
+    ):
         return "validation_error"
     return "transport_error"
 
@@ -51,13 +54,20 @@ async def audited_mcp_call[T](
     tool_name: str,
     arguments: dict[str, Any],
     operation: Callable[[], Awaitable[T]],
+    timeout_seconds: float | None = None,
 ) -> T:
     """Run an MCP operation and persist its sanitised success or failure."""
     invocation_id = str(uuid4())
     started_at = datetime.now(UTC)
     started_ns = monotonic_ns()
     try:
-        result = await operation()
+        if timeout_seconds is None:
+            result = await operation()
+        else:
+            if timeout_seconds <= 0:
+                raise ValueError("MCP timeout must be positive")
+            async with asyncio.timeout(timeout_seconds):
+                result = await operation()
     except Exception as error:
         completed_at = datetime.now(UTC)
         try:

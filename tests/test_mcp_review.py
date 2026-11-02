@@ -141,3 +141,35 @@ async def test_missing_database_is_rejected(tmp_path):
             review_request(),
             tmp_path / "missing.sqlite3",
         )
+
+
+def test_review_lookup_by_observation_id_is_read_only(prepared_database):
+    _, database = prepared_database
+    repository = ReviewRepository(database)
+    repository.initialize()
+
+    saved = repository.submit(review_request())
+
+    with database.connect() as connection:
+        events_before = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    found = repository.get_by_observation_id("OBS-MCP-1")
+    missing = repository.get_by_observation_id("UNKNOWN-OBS")
+
+    assert found is not None
+    assert found.request_id == saved.request_id
+    assert found.case_id == saved.case_id
+    assert found.observation_id == saved.observation_id
+    assert found.comparison_status == saved.comparison_status
+    assert found.evidence == saved.evidence
+    assert missing is None
+
+    with database.connect() as connection:
+        events_after = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert events_after == events_before
+    assert len(repository.get_pending()) == 1

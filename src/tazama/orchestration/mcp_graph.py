@@ -1,5 +1,7 @@
 """MCP-enabled LangGraph workflow with persisted clinician review requests."""
 
+import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from typing import Literal
 from uuid import uuid4
@@ -18,6 +20,7 @@ from tazama.orchestration.state import TriageWorkflowState
 from tazama.patients.history_adapter import to_history_request
 from tazama.storage.observations import ObservationRepository
 from tazama.storage.reviews import (
+    ReviewRepository,
     ReviewRequest,
     SubmitReviewRequest,
     deterministic_evidence,
@@ -127,9 +130,7 @@ def build_mcp_triage_graph(
                     "error": "MCP_TIME_TOOL_UNAVAILABLE",
                 }
             }
-            audit_errors = audit_errors_after_failure(
-                state, error, "get_current_time"
-            )
+            audit_errors = audit_errors_after_failure(state, error, "get_current_time")
             if audit_errors:
                 provenance["time"]["audit_status"] = "persistence_failed"
         return {
@@ -277,9 +278,16 @@ def build_mcp_triage_graph(
             "priority_error": state.get("priority_error"),
         }
         try:
+            timeout_seconds = float(
+                os.environ.get("TAZAMA_OLLAMA_TIMEOUT_SECONDS", "30")
+            )
+            async with asyncio.timeout(timeout_seconds):
+                explanation = await explanation_tool(evidence)
+            return {"explanation": explanation, "explanation_error": None}
+        except TimeoutError:
             return {
-                "explanation": await explanation_tool(evidence),
-                "explanation_error": None,
+                "explanation": None,
+                "explanation_error": "OLLAMA_EXPLANATION_TIMEOUT",
             }
         except Exception:  # noqa: BLE001
             return {
@@ -326,6 +334,42 @@ def build_mcp_triage_graph(
                 *audit_errors,
                 "submit_review_request:MCP_AUDIT_PERSISTENCE_FAILED",
             ]
+        except TimeoutError as error:
+            failure_errors = audit_errors_after_failure(
+                state, error, "submit_review_request"
+            )
+            if review_tool is None:
+                try:
+                    saved = ReviewRepository(repository.database).get_by_observation_id(
+                        request.observation_id
+                    )
+                    if (
+                        saved is not None
+                        and saved.status == "pending"
+                        and saved.case_id == request.case_id
+                        and saved.observation_id == request.observation_id
+                        and saved.comparison_status == request.comparison_status
+                        and deterministic_evidence(saved.evidence)
+                        == deterministic_evidence(request.evidence)
+                        and saved.request_id
+                    ):
+                        return {
+                            "review_submission_status": "persisted",
+                            "review_request_id": saved.request_id,
+                            "review_submission_error": None,
+                            "mcp_audit_errors": failure_errors,
+                        }
+                except Exception:  # noqa: BLE001
+                    failure_errors = [
+                        *failure_errors,
+                        "submit_review_request:RECONCILIATION_LOOKUP_FAILED",
+                    ]
+            return {
+                "review_submission_status": "unconfirmed",
+                "review_request_id": None,
+                "review_submission_error": "MCP_REVIEW_SUBMISSION_UNCONFIRMED",
+                "mcp_audit_errors": failure_errors,
+            }
         except Exception as error:  # noqa: BLE001
             return {
                 "review_submission_status": "unconfirmed",
