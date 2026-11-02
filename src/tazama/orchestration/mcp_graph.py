@@ -1,5 +1,7 @@
 """MCP-enabled LangGraph workflow with persisted clinician review requests."""
 
+import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from typing import Literal
 from uuid import uuid4
@@ -276,9 +278,16 @@ def build_mcp_triage_graph(
             "priority_error": state.get("priority_error"),
         }
         try:
+            timeout_seconds = float(
+                os.environ.get("TAZAMA_OLLAMA_TIMEOUT_SECONDS", "30")
+            )
+            async with asyncio.timeout(timeout_seconds):
+                explanation = await explanation_tool(evidence)
+            return {"explanation": explanation, "explanation_error": None}
+        except TimeoutError:
             return {
-                "explanation": await explanation_tool(evidence),
-                "explanation_error": None,
+                "explanation": None,
+                "explanation_error": "OLLAMA_EXPLANATION_TIMEOUT",
             }
         except Exception:  # noqa: BLE001
             return {
