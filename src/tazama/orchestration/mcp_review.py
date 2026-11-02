@@ -14,6 +14,7 @@ from tazama.orchestration.mcp_audit import (
     MCPToolError,
     audited_mcp_call,
 )
+from tazama.orchestration.mcp_config import mcp_timeout_seconds
 from tazama.storage.reviews import (
     ReviewAttestation,
     ReviewRequest,
@@ -83,7 +84,7 @@ async def submit_review_via_mcp(
         tool_name="submit_review_request",
         arguments=arguments,
         operation=operation,
-        timeout_seconds=5.0,
+        timeout_seconds=mcp_timeout_seconds(),
     )
 
 

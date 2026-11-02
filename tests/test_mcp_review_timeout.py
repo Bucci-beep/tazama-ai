@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from tazama.orchestration import mcp_review
+from tazama.orchestration.mcp_config import DEFAULT_MCP_TIMEOUT_SECONDS
 from tazama.storage.database import Database
 from tazama.storage.mcp_audit import MCPToolCallRepository
 from tazama.storage.reviews import ReviewRepository, SubmitReviewRequest
@@ -43,7 +44,7 @@ async def test_hanging_review_mcp_call_times_out_and_is_audited(tmp_path, monkey
     original_audited_call = mcp_review.audited_mcp_call
 
     async def short_deadline_call(**kwargs):
-        assert kwargs["timeout_seconds"] == 5.0
+        assert kwargs["timeout_seconds"] == DEFAULT_MCP_TIMEOUT_SECONDS
         kwargs["timeout_seconds"] = 0.05
         return await original_audited_call(**kwargs)
 
