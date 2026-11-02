@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 
 from tazama.clinical.history import CompareHistoryRequest, CompareHistoryResult
 from tazama.clinical.priority import PriorityResult
+from tazama.mcp.contracts import PatientObservations
 from tazama.mcp.priority_contract import DeterminePriorityRequest
 from tazama.orchestration.mcp_audit import MCPAuditPersistenceError
 from tazama.orchestration.mcp_config import ollama_timeout_seconds
@@ -41,6 +42,7 @@ TimeTool = Callable[[], Awaitable[TimeContext]]
 
 
 class MCPWorkflowState(TriageWorkflowState, total=False):
+    observation_snapshot: PatientObservations | None
     workflow_run_id: str
     mcp_audit_errors: list[str]
     signs: list[str] | None
@@ -145,6 +147,11 @@ def build_mcp_triage_graph(
         latest = timeline.latest()
 
         metadata = {
+            "observation_snapshot": (
+                latest.observations.model_copy(deep=True)
+                if latest is not None
+                else None
+            ),
             "observation_count": len(timeline.records),
             "has_baseline": timeline.baseline() is not None,
             "has_rechecks": len(timeline.records) > 1,
@@ -220,9 +227,8 @@ def build_mcp_triage_graph(
         return "submit" if state.get("latest_observation_id") else "missing"
 
     async def assess_priority(state: MCPWorkflowState) -> dict:
-        timeline = repository.get_timeline(state["case_id"])
-        latest = timeline.latest()
-        if latest is None:
+        snapshot = state.get("observation_snapshot")
+        if snapshot is None:
             return {
                 "priority_status": "unavailable",
                 "priority_result": None,
@@ -230,7 +236,7 @@ def build_mcp_triage_graph(
             }
         request = DeterminePriorityRequest(
             case_id=state["case_id"],
-            observations=latest.observations,
+            observations=snapshot,
             signs=state.get("signs"),
         )
         audit_errors = state.get("mcp_audit_errors", [])

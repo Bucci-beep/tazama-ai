@@ -101,5 +101,9 @@ class ReassessmentService:
             }
         )
         return ReassessmentResponse.model_validate(
-            {k: v for k, v in result.items() if k != "signs"}
+            {
+                key: result[key]
+                for key in ReassessmentResponse.model_fields
+                if key in result
+            }
         )

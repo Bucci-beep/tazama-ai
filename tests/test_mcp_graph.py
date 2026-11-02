@@ -684,3 +684,48 @@ async def test_injected_review_timeout_does_not_reconcile(tmp_path, monkeypatch)
     assert result["status"] == "review_submission_failed"
     assert lookup_calls == []
     assert reviews.get_pending() == []
+
+
+@pytest.mark.asyncio
+async def test_priority_uses_same_observation_snapshot_as_history():
+    """A new observation must not change evidence mid-workflow."""
+    original_timeline = make_timeline(2)
+    updated_timeline = make_timeline(3)
+
+    repository = Mock()
+    repository.get_timeline.side_effect = [
+        original_timeline,
+        updated_timeline,
+    ]
+
+    history_requests = []
+    priority_requests = []
+    review_requests = []
+
+    async def history(request):
+        history_requests.append(request)
+        return await fake_history(request)
+
+    async def priority(request):
+        priority_requests.append(request)
+        return determine_priority(request.observations, request.signs)
+
+    async def review(request):
+        review_requests.append(request)
+        return await fake_review(request)
+
+    graph = build_mcp_triage_graph(
+        repository,
+        history,
+        review,
+        priority,
+        time_tool=fake_time,
+    )
+
+    result = await graph.ainvoke(initial_state())
+
+    assert history_requests[0].after.obs_id == "OBS-2"
+    assert priority_requests[0].observations.heart_rate_bpm == 90.0
+    assert review_requests[0].observation_id == "OBS-2"
+    assert result["review_submission_status"] == "persisted"
+    repository.get_timeline.assert_called_once_with("CASE-MCP-001")
