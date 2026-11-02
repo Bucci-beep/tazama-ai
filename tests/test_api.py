@@ -388,3 +388,204 @@ def test_post_uses_configured_sqlite_database(monkeypatch, tmp_path):
         "SYNTHETIC-CONFIGURED-1"
     )
     assert persisted.records[0].observation_id == "OBS-1"
+
+def test_due_reassessments_returns_empty_queue(client):
+    response = client.get("/api/v1/reassessments/due")
+
+    assert response.status_code == 200
+    assert response.json()["obligations"] == []
+    assert datetime.fromisoformat(response.json()["as_of"]).tzinfo is not None
+
+
+def test_due_reassessments_returns_overdue_and_excludes_future(client, repository):
+    from tazama.patients.reassessment import RecheckObligation
+    from tazama.storage.rechecks import RecheckRepository
+
+    now = datetime.now(UTC)
+    repository.save(
+        observation(
+            "OBS-DUE-BASELINE",
+            "baseline",
+            now - timedelta(hours=3),
+            heart_rate=80.0,
+        )
+    )
+
+    rechecks = RecheckRepository(repository.database)
+
+    overdue = RecheckObligation(
+        case_id="SYNTHETIC-API-1",
+        created_at=now - timedelta(hours=2),
+        due_at=now - timedelta(hours=1),
+        policy_reference="SYNTHETIC-TEST",
+    )
+    future = RecheckObligation(
+        case_id="SYNTHETIC-API-1",
+        created_at=now,
+        due_at=now + timedelta(hours=1),
+        policy_reference="SYNTHETIC-TEST",
+    )
+
+    rechecks.schedule(overdue)
+    rechecks.schedule(future)
+
+    response = client.get("/api/v1/reassessments/due")
+
+    assert response.status_code == 200
+    assert [item["obligation_id"] for item in response.json()["obligations"]] == [
+        overdue.obligation_id
+    ]
+
+
+def test_due_reassessments_does_not_write_to_database(client, repository):
+    from tazama.patients.reassessment import RecheckObligation
+    from tazama.storage.rechecks import RecheckRepository
+
+    now = datetime.now(UTC)
+    repository.save(
+        observation(
+            "OBS-READONLY-BASELINE",
+            "baseline",
+            now - timedelta(hours=3),
+            heart_rate=80.0,
+        )
+    )
+
+    obligation = RecheckObligation(
+        case_id="SYNTHETIC-API-1",
+        created_at=now - timedelta(hours=2),
+        due_at=now - timedelta(hours=1),
+        policy_reference="SYNTHETIC-TEST",
+    )
+    RecheckRepository(repository.database).schedule(obligation)
+
+    with repository.database.connect() as connection:
+        before = {
+            "obligations": connection.execute(
+                "SELECT * FROM recheck_obligations ORDER BY obligation_id"
+            ).fetchall(),
+            "audit": connection.execute(
+                "SELECT * FROM audit_events ORDER BY event_id"
+            ).fetchall(),
+            "observations": connection.execute(
+                "SELECT * FROM observations ORDER BY observation_id"
+            ).fetchall(),
+        }
+
+    response = client.get("/api/v1/reassessments/due")
+
+    assert response.status_code == 200
+    assert len(response.json()["obligations"]) == 1
+
+    with repository.database.connect() as connection:
+        after = {
+            "obligations": connection.execute(
+                "SELECT * FROM recheck_obligations ORDER BY obligation_id"
+            ).fetchall(),
+            "audit": connection.execute(
+                "SELECT * FROM audit_events ORDER BY event_id"
+            ).fetchall(),
+            "observations": connection.execute(
+                "SELECT * FROM observations ORDER BY observation_id"
+            ).fetchall(),
+        }
+
+    assert after == before
+
+
+def test_due_reassessments_excludes_cancelled_obligations(client, repository):
+    from tazama.patients.reassessment import RecheckObligation
+    from tazama.storage.rechecks import RecheckRepository
+
+    now = datetime.now(UTC)
+    repository.save(
+        observation(
+            "OBS-CANCEL-BASELINE",
+            "baseline",
+            now - timedelta(hours=3),
+            heart_rate=80.0,
+        )
+    )
+
+    rechecks = RecheckRepository(repository.database)
+    obligation = RecheckObligation(
+        case_id="SYNTHETIC-API-1",
+        created_at=now - timedelta(hours=2),
+        due_at=now - timedelta(hours=1),
+        policy_reference="SYNTHETIC-TEST",
+    )
+    rechecks.schedule(obligation)
+    rechecks.cancel(
+        obligation.obligation_id,
+        reason="Synthetic test cancellation",
+        actor_id="TEST-CLINICIAN",
+        cancelled_at=now,
+    )
+
+    response = client.get("/api/v1/reassessments/due")
+
+    assert response.status_code == 200
+    assert response.json()["obligations"] == []
+
+
+def test_due_reassessments_excludes_completed_obligations(client, repository):
+    from tazama.patients.reassessment import RecheckObligation
+    from tazama.storage.rechecks import RecheckRepository
+
+    now = datetime.now(UTC)
+    repository.save(
+        observation(
+            "OBS-COMPLETE-BASELINE",
+            "baseline",
+            now - timedelta(hours=3),
+            heart_rate=80.0,
+        )
+    )
+
+    rechecks = RecheckRepository(repository.database)
+    obligation = RecheckObligation(
+        case_id="SYNTHETIC-API-1",
+        created_at=now - timedelta(hours=2),
+        due_at=now - timedelta(hours=1),
+        policy_reference="SYNTHETIC-TEST",
+    )
+    rechecks.schedule(obligation)
+
+    completed_observation = observation(
+        "OBS-COMPLETE-RECHECK",
+        "recheck",
+        now - timedelta(minutes=30),
+        heart_rate=82.0,
+    )
+    repository.save(completed_observation)
+
+    rechecks.complete(
+        obligation.obligation_id,
+        completed_observation.observation_id,
+        completed_at=datetime.now(UTC),
+        actor_id="TEST-CLINICIAN",
+    )
+
+    response = client.get("/api/v1/reassessments/due")
+
+    assert response.status_code == 200
+    assert response.json()["obligations"] == []
+
+
+def test_due_reassessments_returns_503_on_storage_failure(client, monkeypatch):
+    import sqlite3
+
+    from tazama.storage.rechecks import RecheckRepository
+
+    def unavailable(self, as_of):
+        raise sqlite3.OperationalError("Synthetic database failure")
+
+    monkeypatch.setattr(RecheckRepository, "get_due", unavailable)
+
+    response = client.get("/api/v1/reassessments/due")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Persisted reassessment obligations are unavailable or invalid"
+    }
+    assert "Synthetic database failure" not in response.text

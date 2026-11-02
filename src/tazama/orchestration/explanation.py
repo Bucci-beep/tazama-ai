@@ -26,10 +26,15 @@ EXPLANATIONS = {
 
 def allowed_explanations(evidence: Mapping[str, object]) -> list[str]:
     allowed = ["human_review_required"]
+    comparison_status = evidence.get("comparison_status")
+    comparison_completed = (
+        comparison_status in {"differences_found", "no_differences"}
+        and not evidence.get("comparison_error")
+    )
     allowed.append(
-        "comparison_unavailable"
-        if evidence.get("comparison_error")
-        else "comparison_available"
+        "comparison_available"
+        if comparison_completed
+        else "comparison_unavailable"
     )
     priority_status = evidence.get("priority_status")
     if priority_status == "complete":
@@ -73,6 +78,10 @@ async def explain_evidence_with_ollama(
     selection = ExplanationSelection.model_validate_json(response.message.content)
     if not set(selection.selected_explanation_ids) <= set(allowed):
         raise ValueError("OLLAMA_EXPLANATION_OUTSIDE_GROUNDED_CHOICES")
+    if len(selection.selected_explanation_ids) != len(
+        set(selection.selected_explanation_ids)
+    ):
+        raise ValueError("OLLAMA_EXPLANATION_DUPLICATE_SELECTION")
     return {
         "status": "generated",
         "model": chosen_model,

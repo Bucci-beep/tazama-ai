@@ -538,3 +538,100 @@ export async function requestCaseReassessment(
     };
   }
 }
+
+
+export type DueReassessmentObligation = {
+  obligation_id: string;
+  case_id: string;
+  due_at: string;
+  created_at: string;
+  status: "scheduled";
+  policy_reference: string;
+};
+
+export type DueReassessmentsResult =
+  | {
+      status: "available";
+      as_of: string;
+      obligations: DueReassessmentObligation[];
+    }
+  | { status: "unavailable"; reason: string };
+
+function isAwareTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+
+  const timezonePattern = /(?:Z|[+-]\d{2}:\d{2})$/;
+
+  return timezonePattern.test(value) && Number.isFinite(Date.parse(value));
+}
+
+function isDueReassessmentObligation(
+  value: unknown,
+  asOf: string,
+): value is DueReassessmentObligation {
+  return (
+    isRecord(value) &&
+    typeof value.obligation_id === "string" &&
+    value.obligation_id.length > 0 &&
+    typeof value.case_id === "string" &&
+    value.case_id.length > 0 &&
+    isAwareTimestamp(value.due_at) &&
+    isAwareTimestamp(value.created_at) &&
+    value.status === "scheduled" &&
+    typeof value.policy_reference === "string" &&
+    value.policy_reference.length > 0 &&
+    Date.parse(value.due_at) <= Date.parse(asOf) &&
+    Date.parse(value.created_at) <= Date.parse(value.due_at)
+  );
+}
+
+export async function getDueReassessments(): Promise<DueReassessmentsResult> {
+  try {
+    const response = await fetch(
+      `${apiBaseUrl()}/api/v1/reassessments/due`,
+      {
+        cache: "no-store",
+        signal: AbortSignal.timeout(3000),
+      },
+    );
+
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        reason: `API returned HTTP ${response.status}`,
+      };
+    }
+
+    const data: unknown = await response.json();
+
+    if (
+      !isRecord(data) ||
+      !isAwareTimestamp(data.as_of) ||
+      !Array.isArray(data.obligations) ||
+      !data.obligations.every((item) =>
+        isDueReassessmentObligation(item, String(data.as_of)),
+      ) ||
+      new Set(
+        data.obligations.map(
+          (item: DueReassessmentObligation) => item.obligation_id,
+        ),
+      ).size !== data.obligations.length
+    ) {
+      return {
+        status: "unavailable",
+        reason: "API returned an invalid reassessment queue",
+      };
+    }
+
+    return {
+      status: "available",
+      as_of: data.as_of,
+      obligations: data.obligations,
+    };
+  } catch {
+    return {
+      status: "unavailable",
+      reason: "Unable to reach the local Tazama API",
+    };
+  }
+}

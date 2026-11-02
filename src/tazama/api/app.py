@@ -1,6 +1,7 @@
 """HTTP API for persisted synthetic Tazama observations."""
 
 import sqlite3
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Path, status
@@ -9,6 +10,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from tazama.api.dependencies import (
     ObservationRepositoryDependency,
     ReassessmentServiceDependency,
+    RecheckRepositoryDependency,
 )
 from tazama.api.reassessment import (
     ReassessmentNotFoundError,
@@ -17,6 +19,7 @@ from tazama.api.reassessment import (
 )
 from tazama.mcp.contracts import PatientObservations
 from tazama.patients.models import ObservationRecord
+from tazama.patients.reassessment import RecheckObligation
 
 
 class HealthResponse(BaseModel):
@@ -183,3 +186,39 @@ async def reassess_case(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Reassessment storage is unavailable or invalid",
         ) from exc
+
+
+class DueReassessmentsResponse(BaseModel):
+    """Outstanding reassessment obligations without clinical interpretation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    as_of: AwareDatetime
+    obligations: list[RecheckObligation]
+
+
+@app.get(
+    "/api/v1/reassessments/due",
+    response_model=DueReassessmentsResponse,
+    responses={
+        503: {"description": "Reassessment persistence unavailable"},
+    },
+)
+def get_due_reassessments(
+    repository: RecheckRepositoryDependency,
+) -> DueReassessmentsResponse:
+    """Read due obligations without triggering clinical workflow execution."""
+    as_of = datetime.now(UTC)
+
+    try:
+        obligations = repository.get_due(as_of)
+    except (sqlite3.Error, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Persisted reassessment obligations are unavailable or invalid",
+        ) from exc
+
+    return DueReassessmentsResponse(
+        as_of=as_of,
+        obligations=obligations,
+    )
