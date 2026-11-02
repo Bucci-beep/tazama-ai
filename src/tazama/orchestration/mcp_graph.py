@@ -1,7 +1,6 @@
 """MCP-enabled LangGraph workflow with persisted clinician review requests."""
 
 import asyncio
-import os
 from collections.abc import Awaitable, Callable
 from typing import Literal
 from uuid import uuid4
@@ -12,6 +11,7 @@ from tazama.clinical.history import CompareHistoryRequest, CompareHistoryResult
 from tazama.clinical.priority import PriorityResult
 from tazama.mcp.priority_contract import DeterminePriorityRequest
 from tazama.orchestration.mcp_audit import MCPAuditPersistenceError
+from tazama.orchestration.mcp_config import ollama_timeout_seconds
 from tazama.orchestration.mcp_history import compare_history_via_mcp
 from tazama.orchestration.mcp_priority import determine_priority_via_mcp
 from tazama.orchestration.mcp_review import submit_review_via_mcp
@@ -278,9 +278,7 @@ def build_mcp_triage_graph(
             "priority_error": state.get("priority_error"),
         }
         try:
-            timeout_seconds = float(
-                os.environ.get("TAZAMA_OLLAMA_TIMEOUT_SECONDS", "30")
-            )
+            timeout_seconds = ollama_timeout_seconds()
             async with asyncio.timeout(timeout_seconds):
                 explanation = await explanation_tool(evidence)
             return {"explanation": explanation, "explanation_error": None}
