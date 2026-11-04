@@ -313,12 +313,36 @@ def build_mcp_triage_graph(
             "workflow_provenance": state.get("workflow_provenance"),
         }
 
+        # Injected tools are intentionally independent of SQLite; the real MCP
+        # transport uses a snapshot precondition checked atomically on write.
+        predecessor = None
+        if review_tool is None:
+            try:
+                review_repository = ReviewRepository(repository.database)
+                review_repository.initialize()
+                predecessor = review_repository.get_by_observation_id(
+                    state["latest_observation_id"]
+                )
+            except Exception:  # noqa: BLE001
+                return {
+                    "review_submission_status": "unconfirmed",
+                    "review_request_id": None,
+                    "review_submission_error": "MCP_REVIEW_SUBMISSION_UNCONFIRMED",
+                    "mcp_audit_errors": [
+                        *state.get("mcp_audit_errors", []),
+                        "submit_review_request:RECONCILIATION_LOOKUP_FAILED",
+                    ],
+                }
+
         request = SubmitReviewRequest(
             case_id=state["case_id"],
             actor_id="SYSTEM-AGENT",
             observation_id=state["latest_observation_id"],
             comparison_status=state["comparison_status"],
             evidence=evidence,
+            expected_current_request_id=(
+                predecessor.request_id if predecessor is not None else None
+            ),
         )
 
         audit_errors = state.get("mcp_audit_errors", [])
@@ -348,7 +372,10 @@ def build_mcp_triage_graph(
                         request.observation_id
                     )
                     if (
-                        saved is not None
+                        predecessor is None
+                        and saved is not None
+                        and saved.revision == 1
+                        and saved.supersedes_request_id is None
                         and saved.status == "pending"
                         and saved.case_id == request.case_id
                         and saved.observation_id == request.observation_id
@@ -392,6 +419,31 @@ def build_mcp_triage_graph(
                 or deterministic_evidence(result.evidence)
                 != deterministic_evidence(request.evidence)
                 or not result.request_id
+                or (
+                    review_tool is None
+                    and predecessor is not None
+                    and (
+                        (
+                            result.request_id == predecessor.request_id
+                            and result.revision != predecessor.revision
+                        )
+                        or (
+                            result.request_id != predecessor.request_id
+                            and (
+                                result.revision != predecessor.revision + 1
+                                or result.supersedes_request_id
+                                != predecessor.request_id
+                            )
+                        )
+                    )
+                )
+                or (
+                    review_tool is None
+                    and predecessor is None
+                    and (
+                        result.revision != 1 or result.supersedes_request_id is not None
+                    )
+                )
             ):
                 raise ValueError("Review response does not match request")
         except Exception:  # noqa: BLE001

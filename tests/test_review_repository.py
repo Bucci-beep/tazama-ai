@@ -173,9 +173,9 @@ def test_retry_preserves_first_workflow_provenance_without_conflict(setup):
     )
 
     assert second.request_id == first.request_id
-    assert second.evidence["workflow_provenance"] == first.evidence[
-        "workflow_provenance"
-    ]
+    assert (
+        second.evidence["workflow_provenance"] == first.evidence["workflow_provenance"]
+    )
 
 
 def test_reinitialization_preserves_review_requests(setup):
@@ -192,10 +192,17 @@ def test_existing_database_receives_unique_index(setup):
 
     with database.connect() as connection:
         indexes = connection.execute("PRAGMA index_list('review_requests')").fetchall()
+        unique_columns = [
+            [
+                column[2]
+                for column in connection.execute(f"PRAGMA index_info({index[1]})")
+            ]
+            for index in indexes
+            if index[2] == 1
+        ]
 
-    assert any(
-        row[1] == "idx_review_requests_observation" and row[2] == 1 for row in indexes
-    )
+    assert ["observation_id", "revision"] in unique_columns
+    assert ["observation_id"] not in unique_columns
 
 
 def test_retry_does_not_replace_original_actor(setup):
@@ -269,3 +276,102 @@ def test_demo_attestation_rejects_conflict_and_is_immutable(setup):
             "UPDATE review_attestations SET action = 'rejected' WHERE event_id = ?",
             (event.event_id,),
         )
+
+
+def test_changed_evidence_creates_immutable_review_revision(setup):
+    """Changed assessed evidence creates a new review without rewriting history."""
+    database, reviews = setup
+
+    first = reviews.submit(
+        request(evidence={"signs_assessed": False, "reason": "Unassessed"})
+    )
+    second = reviews.submit(
+        request(
+            evidence={"signs_assessed": True, "reason": "Assessed"},
+            expected_current_request_id=first.request_id,
+        )
+    )
+
+    assert first.request_id != second.request_id
+    assert first.revision == 1
+    assert second.revision == 2
+    assert second.supersedes_request_id == first.request_id
+    assert first.evidence["signs_assessed"] is False
+    assert second.evidence["signs_assessed"] is True
+
+    retry = reviews.submit(
+        request(evidence={"signs_assessed": True, "reason": "Assessed"})
+    )
+    assert retry.request_id == second.request_id
+
+    pending = reviews.get_pending()
+    assert [item.request_id for item in pending] == [second.request_id]
+
+    with database.connect() as connection:
+        stored = connection.execute(
+            """
+            SELECT request_id, evidence_json
+            FROM review_requests
+            WHERE observation_id = ?
+            ORDER BY revision
+            """,
+            ("OBS-1",),
+        ).fetchall()
+
+        audit_count = connection.execute(
+            "SELECT COUNT(*) FROM review_request_events"
+        ).fetchone()[0]
+
+    assert len(stored) == 2
+    assert stored[0][0] == first.request_id
+    assert stored[1][0] == second.request_id
+    assert audit_count == 2
+
+
+def test_eng03_superseded_attestation_is_rejected(setup):
+    import pytest
+
+    _, reviews = setup
+    first = reviews.submit(request(evidence={"signs_assessed": False}))
+    second = reviews.submit(
+        request(
+            evidence={"signs_assessed": True},
+            expected_current_request_id=first.request_id,
+        )
+    )
+    with pytest.raises(ValueError, match="superseded"):
+        reviews.attest(
+            SubmitAttestation(
+                request_id=first.request_id,
+                clinician_id="DEMO-CLINICIAN-1",
+                action="approved",
+            )
+        )
+    accepted = reviews.attest(
+        SubmitAttestation(
+            request_id=second.request_id,
+            clinician_id="DEMO-CLINICIAN-1",
+            action="approved",
+        )
+    )
+    assert accepted.request_id == second.request_id
+
+
+def test_eng03_historical_attestation_replay_is_idempotent(setup):
+    _, reviews = setup
+    first = reviews.submit(request(evidence={"signs_assessed": False}))
+    attestation_request = SubmitAttestation(
+        request_id=first.request_id,
+        clinician_id="DEMO-CLINICIAN-1",
+        action="approved",
+    )
+    historical = reviews.attest(attestation_request)
+    reviews.submit(
+        request(
+            evidence={"signs_assessed": True},
+            expected_current_request_id=first.request_id,
+        )
+    )
+    replay = reviews.attest(attestation_request)
+    assert replay.event_id == historical.event_id
+    assert replay.evidence_json == historical.evidence_json
