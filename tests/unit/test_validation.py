@@ -34,7 +34,10 @@ def test_no_observations_does_not_trigger_scoring():
     result = validate_observations(request)
 
     assert result.status == "pending_protocol"
-    assert set(result.missing_fields) == set(PatientObservations.model_fields)
+    # adult_chart_applies is not a measurement: it has an explicit "not_assessed"
+    # default, so it is not reported as a missing observation.
+    expected = set(PatientObservations.model_fields) - {"adult_chart_applies"}
+    assert set(result.missing_fields) == expected
 
 
 def test_unknown_observation_is_rejected():
