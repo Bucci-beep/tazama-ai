@@ -17,6 +17,12 @@ class PatientObservations(BaseModel):
     mobility: str | None = None  # walking | with_help | stretcher_immobile
     trauma: bool | None = None
 
+    # Nurse-confirmed: is the adult SATS chart the right chart for this patient
+    # (older than 12 years and taller than 150 cm)? Never inferred by Tazama.
+    # "not_assessed" is the safe default, including for records stored before this
+    # field existed.
+    adult_chart_applies: Literal["yes", "no", "not_assessed"] = "not_assessed"
+
 
 class ValidateObservationsRequest(BaseModel):
     """Versioned input contract for observation validation."""
