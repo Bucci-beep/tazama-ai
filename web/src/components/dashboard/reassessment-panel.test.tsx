@@ -202,6 +202,40 @@ describe("ReassessmentPanel", () => {
     expect(screen.getByText("DISC/NOT/A_REAL_SIGN")).toBeVisible();
   });
 
+  it("shows applicability abstention without false reassurance", async () => {
+    const result = response();
+    result.priority_status = "abstained";
+    result.priority_result = {
+      ...result.priority_result!,
+      status: "abstained",
+      priority: null,
+      priority_at_least: null,
+      tews: {
+        status: "abstained",
+        total: null,
+        priority: null,
+        missing: [],
+      },
+      reasons: [
+        "Adult SATS chart applicability not confirmed. Human clinical assessment is required; this result is not routine or low-risk.",
+      ],
+    };
+
+    action.mockResolvedValue(success(result));
+    await submit();
+
+    expect(await screen.findByText("Assessment abstained")).toBeVisible();
+    expect(
+      screen.getByText("No priority was proposed from the available evidence."),
+    ).toBeVisible();
+    expect(screen.getByText(/Human clinical assessment is required/))
+      .toBeVisible();
+    expect(screen.getByText(/not routine or low-risk/))
+      .toBeVisible();
+    expect(screen.queryByText(/Proposed priority:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Priority is at least/)).not.toBeInTheDocument();
+  });
+
   it("shows optional explanation unavailability", async () => {
     action.mockResolvedValue(success(response({ explanation: null, explanation_error: "NOT_CONFIGURED" })));
     await submit();

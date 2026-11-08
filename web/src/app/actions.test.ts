@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { discriminatorGroups } from "@/lib/discriminators";
 
-const { requestCaseReassessment } = vi.hoisted(() => ({
+const { requestCaseReassessment, createCaseObservation } = vi.hoisted(() => ({
   requestCaseReassessment: vi.fn(),
+  createCaseObservation: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({ requestCaseReassessment }));
+vi.mock("@/lib/api", () => ({ requestCaseReassessment, createCaseObservation }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
-import { requestReassessmentAction, type ReassessmentActionState } from "./actions";
+import { requestReassessmentAction, saveObservationAction, type ReassessmentActionState } from "./actions";
 
 const idle: ReassessmentActionState = { status: "idle", message: "", result: null };
 
@@ -67,4 +68,84 @@ describe("requestReassessmentAction sign validation", () => {
     });
     expect(requestCaseReassessment).not.toHaveBeenCalled();
   });
+});
+
+
+describe("saveObservationAction adult SATS applicability", () => {
+  beforeEach(() => {
+    createCaseObservation.mockReset();
+    createCaseObservation.mockResolvedValue({
+      status: "created",
+      record: {},
+    });
+  });
+
+  function observationForm(value?: string): FormData {
+    const data = new FormData();
+    data.set("case_id", "SYNTHETIC-1");
+    data.set("observation_type", "baseline");
+    data.set("recorded_at", "2026-10-14T10:00:00");
+    data.set("trauma", "");
+    if (value !== undefined) {
+      data.set("adult_chart_applies", value);
+    }
+    return data;
+  }
+
+  it.each([
+    ["omitted", undefined, "not_assessed"],
+    ["blank", "", "not_assessed"],
+    ["confirmed yes", "yes", "yes"],
+    ["confirmed no", "no", "no"],
+    ["explicit not assessed", "not_assessed", "not_assessed"],
+  ])("submits %s applicability correctly", async (_label, value, expected) => {
+    await saveObservationAction(
+      { status: "idle", message: "" },
+      observationForm(value),
+    );
+
+    expect(createCaseObservation).toHaveBeenCalledWith(
+      "SYNTHETIC-1",
+      expect.objectContaining({
+        observations: expect.objectContaining({
+          adult_chart_applies: expected,
+        }),
+      }),
+    );
+  });
+
+  it("rejects a file submitted as applicability", async () => {
+    const data = observationForm();
+    data.set(
+      "adult_chart_applies",
+      new File(["invalid"], "tampered.txt"),
+    );
+
+    const result = await saveObservationAction(
+      { status: "idle", message: "" },
+      data,
+    );
+
+    expect(result).toEqual({
+      status: "error",
+      message: "Invalid adult SATS chart applicability.",
+    });
+    expect(createCaseObservation).not.toHaveBeenCalled();
+  });
+
+  it.each(["unknown", "YES", "true"])(
+    "rejects invalid applicability %s before API submission",
+    async (value) => {
+      const result = await saveObservationAction(
+        { status: "idle", message: "" },
+        observationForm(value),
+      );
+
+      expect(result).toEqual({
+        status: "error",
+        message: "Invalid adult SATS chart applicability.",
+      });
+      expect(createCaseObservation).not.toHaveBeenCalled();
+    },
+  );
 });

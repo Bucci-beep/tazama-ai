@@ -27,6 +27,7 @@ def make_repository() -> Mock:
                 + timedelta(minutes=index * 10),
                 observation_type="baseline" if index == 0 else "recheck",
                 observations=PatientObservations(
+                    adult_chart_applies="yes",
                     heart_rate_bpm=float(80 + index * 10),
                     respiratory_rate_bpm=12.0,
                     systolic_bp_mmhg=120.0,

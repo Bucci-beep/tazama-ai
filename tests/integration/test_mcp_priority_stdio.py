@@ -7,6 +7,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 NORMAL = {
+    "adult_chart_applies": "yes",
     "heart_rate_bpm": 80.0,
     "respiratory_rate_bpm": 12.0,
     "systolic_bp_mmhg": 120.0,
@@ -48,7 +49,7 @@ async def test_emergency_sign_gives_emergency_without_vitals(server_parameters):
         {
             "schema_version": "1.0",
             "case_id": "SYN-210",
-            "observations": {},
+            "observations": {"adult_chart_applies": "yes"},
             "signs": ["DISC/EMERGENCY/NOT_BREATHING"],
         },
     )

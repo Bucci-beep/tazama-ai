@@ -94,6 +94,7 @@ async def test_mcp_scoring_never_invents_priority(server_parameters):
                     "schema_version": "1.0",
                     "case_id": "SYN-002",
                     "observations": {
+                        "adult_chart_applies": "yes",
                         "heart_rate_bpm": 90.0,
                     },
                 }
@@ -123,6 +124,7 @@ async def test_mcp_scores_complete_observations_with_evidence(server_parameters)
                     "schema_version": "1.0",
                     "case_id": "SYN-004",
                     "observations": {
+                        "adult_chart_applies": "yes",
                         "heart_rate_bpm": 80.0,
                         "respiratory_rate_bpm": 12.0,
                         "systolic_bp_mmhg": 120.0,

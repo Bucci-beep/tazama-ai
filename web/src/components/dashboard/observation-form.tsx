@@ -61,6 +61,31 @@ export function ObservationForm({
         </label>
       </div>
 
+      <div>
+        <label
+          htmlFor="adult_chart_applies"
+          className="text-sm font-medium text-slate-700"
+        >
+          Adult SATS chart applicability
+        </label>
+        <select
+          id="adult_chart_applies"
+          name="adult_chart_applies"
+          defaultValue=""
+          aria-describedby="adult-chart-help"
+          className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">Select applicability</option>
+          <option value="yes">Yes — nurse confirmed applicable</option>
+          <option value="no">No — not applicable</option>
+          <option value="not_assessed">Not assessed</option>
+        </select>
+        <p id="adult-chart-help" className="mt-1.5 text-xs text-slate-500">
+          Nurse confirmation is required. Tazama does not infer
+          applicability. Leaving this blank records not assessed.
+        </p>
+      </div>
+
       <fieldset>
         <legend className="text-sm font-semibold text-slate-800">
           Structured observations

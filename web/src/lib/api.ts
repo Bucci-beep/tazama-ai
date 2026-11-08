@@ -14,6 +14,7 @@ export type ApiConnection =
   | { connected: false; reason: string };
 
 export type PatientObservations = {
+  adult_chart_applies: "yes" | "no" | "not_assessed";
   heart_rate_bpm: number | null;
   respiratory_rate_bpm: number | null;
   systolic_bp_mmhg: number | null;

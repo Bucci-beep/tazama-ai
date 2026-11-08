@@ -17,11 +17,13 @@ URGENT_SIGN = "DISC/URGENT/MODERATE_PAIN"
 
 
 def obs(**overrides):
-    return PatientObservations(**{**NORMAL, **overrides})
+    return PatientObservations(**{**NORMAL, "adult_chart_applies": "yes", **overrides})
 
 
 def test_emergency_sign_needs_no_vital_signs():
-    result = determine_priority(PatientObservations(), [EMERGENCY_SIGN])
+    result = determine_priority(
+        PatientObservations(adult_chart_applies="yes"), [EMERGENCY_SIGN]
+    )
 
     assert result.status == "complete"
     assert result.priority == "emergency"
@@ -81,7 +83,7 @@ def test_signs_not_assessed_gives_a_minimum_only():
 
 
 def test_missing_vitals_with_no_signs_abstains():
-    result = determine_priority(PatientObservations(), [])
+    result = determine_priority(PatientObservations(adult_chart_applies="yes"), [])
 
     assert result.status == "abstained"
     assert result.priority is None
@@ -89,7 +91,9 @@ def test_missing_vitals_with_no_signs_abstains():
 
 
 def test_missing_vitals_with_a_sign_gives_a_minimum_only():
-    result = determine_priority(PatientObservations(), [VERY_URGENT_SIGN])
+    result = determine_priority(
+        PatientObservations(adult_chart_applies="yes"), [VERY_URGENT_SIGN]
+    )
 
     assert result.status == "minimum_only"
     assert result.priority is None

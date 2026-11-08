@@ -2,6 +2,7 @@ import { getCaseTimeline, type PatientObservations } from "@/lib/api";
 import { ReassessmentPanel } from "@/components/dashboard/reassessment-panel";
 
 const measurementLabels: Record<keyof PatientObservations, string> = {
+  adult_chart_applies: "Adult SATS applicability",
   heart_rate_bpm: "Heart rate",
   respiratory_rate_bpm: "Respiratory rate",
   systolic_bp_mmhg: "Systolic BP",
@@ -12,7 +13,15 @@ const measurementLabels: Record<keyof PatientObservations, string> = {
   trauma: "Trauma",
 };
 
-function displayValue(value: PatientObservations[keyof PatientObservations]) {
+function displayValue(
+  value: PatientObservations[keyof PatientObservations],
+  key: keyof PatientObservations,
+) {
+  if (key === "adult_chart_applies") {
+    if (value === "yes") return "Yes — confirmed";
+    if (value === "no") return "No — not applicable";
+    return "Not assessed";
+  }
   if (value === null) return "Not recorded";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return String(value);
@@ -72,7 +81,7 @@ export async function CaseObservations({ caseId }: { caseId: string }) {
                   {measurementLabels[key as keyof PatientObservations]}
                 </dt>
                 <dd className="mt-1 text-sm font-semibold text-slate-800">
-                  {displayValue(value)}
+                  {displayValue(value, key as keyof PatientObservations)}
                 </dd>
               </div>
             ))}
