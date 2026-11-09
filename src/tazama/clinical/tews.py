@@ -41,6 +41,8 @@ class UnscorableIssue(BaseModel):
         "not_a_finite_number",
         "no_matching_band",
         "unrecognised_value",
+        "adult_chart_not_confirmed",
+        "adult_chart_not_applicable",
     ]
     detail: str
 
@@ -126,10 +128,40 @@ def _score_category(field: str, spec: dict[str, Any], value: Any):
     )
 
 
+def applicability_issue(observations: PatientObservations) -> UnscorableIssue | None:
+    """Return an issue unless a nurse has confirmed the adult chart applies.
+
+    Applicability is never inferred. Anything other than an explicit "yes" blocks
+    scoring, so a patient the adult chart may not suit is never scored by it.
+    """
+    if observations.adult_chart_applies == "yes":
+        return None
+    if observations.adult_chart_applies == "no":
+        return UnscorableIssue(
+            field="adult_chart_applies",
+            reason="adult_chart_not_applicable",
+            detail="the nurse recorded that the adult SATS chart does not apply",
+        )
+    return UnscorableIssue(
+        field="adult_chart_applies",
+        reason="adult_chart_not_confirmed",
+        detail="adult SATS chart applicability not confirmed by the nurse",
+    )
+
+
 def score_tews(
     observations: PatientObservations, protocol: dict[str, Any] | None = None
 ) -> TEWSResult:
     protocol = protocol if protocol is not None else load_protocol()
+
+    blocked = applicability_issue(observations)
+    if blocked is not None:
+        return TEWSResult(
+            status="abstained",
+            protocol_id=protocol["protocol_id"],
+            protocol_version=protocol["protocol_version"],
+            unscorable=[blocked],
+        )
 
     scores: list[ParameterScore] = []
     missing: list[str] = []

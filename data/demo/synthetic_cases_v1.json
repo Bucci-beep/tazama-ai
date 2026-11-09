@@ -13,7 +13,8 @@
         "temperature_c": 36.8,
         "consciousness": "alert",
         "mobility": "walking",
-        "trauma": false
+        "trauma": false,
+        "adult_chart_applies": "yes"
       },
       "recheck": {
         "heart_rate_bpm": 80,
@@ -22,7 +23,8 @@
         "temperature_c": 36.8,
         "consciousness": "alert",
         "mobility": "walking",
-        "trauma": false
+        "trauma": false,
+        "adult_chart_applies": "yes"
       },
       "expected": {
         "comparison_status": "differences_found",
@@ -48,7 +50,8 @@
         "temperature_c": 36.8,
         "consciousness": "alert",
         "mobility": "walking",
-        "trauma": false
+        "trauma": false,
+        "adult_chart_applies": "yes"
       },
       "recheck": {
         "heart_rate_bpm": 112,
@@ -57,7 +60,8 @@
         "temperature_c": 36.8,
         "consciousness": "alert",
         "mobility": "with_help",
-        "trauma": false
+        "trauma": false,
+        "adult_chart_applies": "yes"
       },
       "expected": {
         "comparison_status": "differences_found",
@@ -85,14 +89,16 @@
         "spo2_percent": 98,
         "consciousness": "alert",
         "mobility": "walking",
-        "trauma": false
+        "trauma": false,
+        "adult_chart_applies": "yes"
       },
       "recheck": {
         "heart_rate_bpm": 112,
         "respiratory_rate_bpm": 14.5,
         "consciousness": "alert",
         "mobility": "walking",
-        "trauma": false
+        "trauma": false,
+        "adult_chart_applies": "yes"
       },
       "expected": {
         "comparison_status": "differences_found",

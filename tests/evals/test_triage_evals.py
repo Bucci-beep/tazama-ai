@@ -23,6 +23,10 @@ NORMAL = {
     "trauma": False,
 }
 
+# These cases test the adult chart itself, so the nurse has confirmed it applies.
+# Applicability is tested separately in tests/test_applicability_gate.py.
+APPLIES = {"adult_chart_applies": "yes"}
+
 EMERGENCY_SIGN = "DISC/EMERGENCY/NOT_BREATHING"
 VERY_URGENT_SIGN = "DISC/VERY_URGENT/CHEST_PAIN"
 URGENT_SIGN = "DISC/URGENT/MODERATE_PAIN"
@@ -151,7 +155,9 @@ CASES = [
 
 @pytest.mark.parametrize("case", CASES, ids=[case.case_id for case in CASES])
 def test_eval_case(case):
-    result = determine_priority(PatientObservations(**case.observations), case.signs)
+    result = determine_priority(
+        PatientObservations(**{**APPLIES, **case.observations}), case.signs
+    )
 
     assert result.status == case.expected_status
     assert result.priority == case.expected_priority
@@ -175,6 +181,8 @@ def test_F01_omitted_sign_is_not_detected():
     # The nurse did not tick it, so the system sees no signs.
     nurse_ticked: list[str] = []
 
-    result = determine_priority(PatientObservations(**vitals()), nurse_ticked)
+    result = determine_priority(
+        PatientObservations(**{**APPLIES, **vitals()}), nurse_ticked
+    )
 
     assert result.priority == "very_urgent"

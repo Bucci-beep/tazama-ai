@@ -46,6 +46,7 @@ def seed_observations(repository: ObservationRepository) -> None:
                     consciousness="alert",
                     mobility="walking",
                     trauma=False,
+                    adult_chart_applies="yes",
                 ),
             )
         )

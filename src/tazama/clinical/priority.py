@@ -16,7 +16,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from tazama.clinical.tews import TEWSResult, load_protocol, score_tews
+from tazama.clinical.tews import (
+    TEWSResult,
+    applicability_issue,
+    load_protocol,
+    score_tews,
+)
 from tazama.mcp.contracts import PatientObservations
 
 DEFAULT_DISCRIMINATORS_PATH = (
@@ -94,6 +99,21 @@ def determine_priority(
             tews=tews,
             reasons=reasons or [],
             protocol_version=version,
+        )
+
+    blocked = applicability_issue(observations)
+    if blocked is not None:
+        # No priority of any kind, even if a sign was identified: the adult chart
+        # and its sign lists may not suit this patient.
+        return build(
+            "abstained",
+            reasons=[
+                (
+                    f"{blocked.detail[0].upper()}{blocked.detail[1:]}. "
+                    "Human clinical assessment is required; this is not a routine "
+                    "or low-risk result"
+                )
+            ],
         )
 
     requested = list(dict.fromkeys(signs)) if signs is not None else None
