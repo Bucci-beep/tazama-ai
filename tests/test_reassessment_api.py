@@ -39,6 +39,7 @@ def seed(repository: ObservationRepository) -> None:
                 observation_type=observation_type,
                 recorded_at=start + timedelta(minutes=index * 10),
                 observations=PatientObservations(
+                    adult_chart_applies="yes",
                     heart_rate_bpm=float(80 + index * 10),
                     respiratory_rate_bpm=18.0,
                     systolic_bp_mmhg=120.0,

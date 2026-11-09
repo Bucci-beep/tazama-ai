@@ -15,7 +15,13 @@ NORMAL = {
 
 
 def obs(**overrides):
-    return PatientObservations(**{**NORMAL, **overrides})
+    return PatientObservations(
+        **{
+            **NORMAL,
+            "adult_chart_applies": "yes",
+            **overrides,
+        }
+    )
 
 
 def test_normal_patient_scores_zero_and_routine():
@@ -114,7 +120,7 @@ def test_total_maps_to_priority_band(overrides, total, priority):
 def test_missing_observation_abstains_and_is_not_imputed():
     data = {**NORMAL}
     del data["heart_rate_bpm"]
-    result = score_tews(PatientObservations(**data))
+    result = score_tews(PatientObservations(**data, adult_chart_applies="yes"))
     assert result.status == "abstained"
     assert result.total is None
     assert result.priority is None

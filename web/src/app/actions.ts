@@ -105,6 +105,26 @@ function optionalText(formData: FormData, name: string): string | null {
   return value || null;
 }
 
+function parseAdultChartApplicability(
+  formData: FormData,
+): "yes" | "no" | "not_assessed" {
+  const value = formData.get("adult_chart_applies");
+
+  if (value === null || value === "") {
+    return "not_assessed";
+  }
+
+  if (
+    value === "yes" ||
+    value === "no" ||
+    value === "not_assessed"
+  ) {
+    return value;
+  }
+
+  throw new Error("Invalid adult SATS chart applicability.");
+}
+
 export async function saveObservationAction(
   _previousState: ObservationFormState,
   formData: FormData,
@@ -136,6 +156,7 @@ export async function saveObservationAction(
       throw new Error("Trauma must be yes, no, or not recorded");
     }
     observations = {
+      adult_chart_applies: parseAdultChartApplicability(formData),
       heart_rate_bpm: optionalNumber(formData, "heart_rate_bpm"),
       respiratory_rate_bpm: optionalNumber(formData, "respiratory_rate_bpm"),
       systolic_bp_mmhg: optionalNumber(formData, "systolic_bp_mmhg"),

@@ -20,7 +20,9 @@ NORMAL = {
 def request(**overrides):
     return CalculateSATSRequest(
         case_id="SYN-100",
-        observations=PatientObservations(**{**NORMAL, **overrides}),
+        observations=PatientObservations(
+            **{**NORMAL, "adult_chart_applies": "yes", **overrides}
+        ),
     )
 
 
@@ -62,7 +64,7 @@ def test_missing_observation_is_unavailable_and_named():
     result = calculate_sats(
         CalculateSATSRequest(
             case_id="SYN-101",
-            observations=PatientObservations(**data),
+            observations=PatientObservations(**data, adult_chart_applies="yes"),
         )
     )
 
