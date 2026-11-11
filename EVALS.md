@@ -68,9 +68,10 @@ Checks on every blocked case:
 - The reason tells the nurse that if an emergency sign or any immediate danger is present, they
   should not wait for Tazama and should escalate under their local emergency protocol.
 
-The same tests also check the validation warning, the scoring tool and the priority tool, and run
-cases through the real API and workflow, so that neither first triage nor a reassessment can
-bypass the gate.
+The same tests also check the validation warning, the scoring tool and the priority tool. The
+suite also exercises the actual reassessment API endpoint and workflow with injected test tools,
+so that neither first triage nor a reassessment can bypass the gate. Real MCP stdio integration
+is tested separately.
 
 ## Results
 
