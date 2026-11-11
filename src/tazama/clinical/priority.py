@@ -111,7 +111,9 @@ def determine_priority(
                 (
                     f"{blocked.detail[0].upper()}{blocked.detail[1:]}. "
                     "Human clinical assessment is required; this is not a routine "
-                    "or low-risk result"
+                    "or low-risk result. If an emergency sign or any immediate danger "
+                    "is present, do not wait for Tazama: escalate now under your "
+                    "local emergency protocol"
                 )
             ],
         )

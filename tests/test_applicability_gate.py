@@ -56,6 +56,8 @@ CASE_B = {
 
 HUMAN_ASSESSMENT = "Human clinical assessment is required"
 NOT_ROUTINE = "not a routine or low-risk result"
+ESCALATE = "do not wait for Tazama"
+LOCAL_PROTOCOL = "local emergency protocol"
 
 
 def obs(values: dict, applies: str | None) -> PatientObservations:
@@ -97,6 +99,9 @@ def test_unconfirmed_applicability_abstains_with_no_priority(
         assert fragment in text
         assert HUMAN_ASSESSMENT in text
         assert NOT_ROUTINE in text
+        # Abstaining must never delay an emergency response.
+        assert ESCALATE in text
+        assert LOCAL_PROTOCOL in text
 
 
 @pytest.mark.parametrize(
@@ -162,6 +167,16 @@ def test_case_h_latest_observation_decides():
     latest = determine_priority(recheck, signs=[])
     assert latest.status == "abstained"
     assert latest.priority is None
+
+
+def test_case_h_reverse_a_later_confirmation_allows_scoring_again():
+    earlier = determine_priority(obs(CASE_B, "not_assessed"), signs=[])
+    assert earlier.status == "abstained"
+
+    confirmed = determine_priority(obs(CASE_B, "yes"), signs=[])
+    assert confirmed.status == "complete"
+    assert confirmed.priority == "very_urgent"
+    assert confirmed.tews.total == 5
 
 
 def test_validation_warns_when_applicability_is_not_confirmed():
@@ -333,5 +348,20 @@ def test_workflow_confirmed_applicability_still_scores(tmp_path):
         [],
     )
 
+    assert payload["priority_status"] == "complete"
+    assert payload["priority_result"]["priority"] == "very_urgent"
+
+
+def test_workflow_case_h_reverse_latest_confirmation_scores_again(tmp_path):
+    payload = _reassess(
+        tmp_path,
+        [
+            ("baseline", obs(CASE_A, "not_assessed")),
+            ("recheck", obs(CASE_B, "yes")),
+        ],
+        [],
+    )
+
+    assert payload["latest_observation_id"] == "OBS-2"
     assert payload["priority_status"] == "complete"
     assert payload["priority_result"]["priority"] == "very_urgent"
