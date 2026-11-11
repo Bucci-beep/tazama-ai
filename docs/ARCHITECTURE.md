@@ -14,10 +14,12 @@ must not be used to make real patient care decisions.
 2. The language model never assigns a priority, diagnoses, prescribes or moves a queue.
 3. Missing or off-chart observations are never imputed. The system reports "at least X"
    or abstains.
-4. A proposal is only a proposal. Nothing is approved, and no queue changes, without a
+4. The adult chart is used only when a nurse has confirmed that it applies. Tazama never
+   infers this. Otherwise it abstains, and tells the nurse not to wait for it.
+5. A proposal is only a proposal. Nothing is approved, and no queue changes, without a
    named clinician's decision.
-5. Every consequential workflow transition is recorded in an append-only audit trail.
-6. Inference runs locally on an open-weights model. No patient data leaves the machine.
+6. Every consequential workflow transition is recorded in an append-only audit trail.
+7. Inference runs locally on an open-weights model. No patient data leaves the machine.
 
 ## System overview
 
@@ -52,10 +54,30 @@ approval authority.
 - Protocol data lives in `data/protocol/` (SATS adult chart, version `2015-chart-1`).
   It is attributed and licensed CC BY-NC-SA 3.0. The code is Apache-2.0.
 
+### Adult chart applicability
+- Each observation carries `adult_chart_applies`: `yes`, `no` or `not_assessed`. Only a
+  nurse sets it. Tazama never infers it from vital signs or notes. The dashboard selector
+  has no preselected option, and an omitted value is `not_assessed`.
+- Anything other than an explicit `yes` makes scoring abstain: no TEWS total, no
+  priority and no "at least" minimum. This holds even if the nurse identified an
+  emergency sign, because the adult chart and its sign lists may not suit the patient.
+- The gate sits in `score_tews` and `determine_priority`, so it covers initial triage,
+  reassessment and direct calls to the MCP tools. The latest observation decides: a later
+  `yes` allows scoring again, and a later `not_assessed` stops it.
+- Records stored before this field existed load as `not_assessed` and abstain. Nothing is
+  rewritten in the database.
+- The abstention reason says that human clinical assessment is required, that the result
+  is not a routine or low-risk one, and that if an emergency sign or any immediate danger
+  is present the nurse should not wait for Tazama and should escalate under the local
+  emergency protocol. No priority is assigned.
+- Plausibility checks are structural only (type, finite numbers, allowed values). No
+  clinical range limits exist in code. If a clinical reviewer approves any, they belong in
+  the protocol data, not in code.
+
 ### Signs and results
 - `signs=None` means the nurse has not assessed signs. `[]` means assessed, none found.
 - Result statuses: `complete`, `minimum_only` ("at least X", signs not assessed) and
-  `abstained` (missing or off-chart data).
+  `abstained` (missing or off-chart data, or adult-chart applicability not confirmed).
 - An off-chart or missing value never produces a lower priority by default.
 
 ### MCP server (`src/tazama/mcp/`)
@@ -63,11 +85,11 @@ FastMCP (SDK 1.x) over stdio. Custom tools:
 
 | Tool | Kind | Purpose |
 | --- | --- | --- |
-| `validate_observations` | read | Reports missing fields. No clinical readiness verdict. |
-| `calculate_sats` | read | Deterministic TEWS. Abstains rather than guessing. |
+| `validate_observations` | read | Reports missing fields and warns when adult-chart applicability is unconfirmed. No clinical readiness verdict. |
+| `calculate_sats` | read | Deterministic TEWS. Abstains rather than guessing, including when applicability is unconfirmed. |
 | `compare_with_history` | read | Compares readings. Unavailable history is never reassuring. |
-| `determine_priority` | read | Deterministic priority proposal from TEWS and signs. |
-| `submit_review_request` | **action** | Persists a pending review request with its evidence. Idempotent. Only "pending". |
+| `determine_priority` | read | Deterministic priority proposal from TEWS and signs. Abstains when applicability is unconfirmed. |
+| `submit_review_request` | **action** | Persists a pending review request with its evidence. Idempotent for unchanged evidence; changed evidence creates a new revision. Only "pending". |
 | `record_demo_attestation` | **action, gated** | Registered only when `TAZAMA_ENABLE_DEMO_ATTESTATION=1`. Demo only. |
 
 ### Borrowed MCP server (`mcp-server-time`)
@@ -79,7 +101,7 @@ FastMCP (SDK 1.x) over stdio. Custom tools:
 - Provenance is nonclinical and excluded from the deterministic idempotency fingerprint.
   A different timestamp on retry preserves the first pending review and its evidence.
 - The call has a bounded timeout and failure is nonblocking. It never supplies observation
-  timestamps, deadlines, scores or priorities. Tazama has no overdue-reassessment rule.
+  timestamps, deadlines, scores or priorities.
 - The maintained server is preferred to a local clock wrapper for its reusable MCP contract,
   IANA timezone validation and independent interoperability.
 
@@ -88,6 +110,17 @@ LangGraph with typed state and conditional routing. MCP failures are treated as
 "evidence unavailable", never as a negative clinical finding. Retrying the workflow does
 not create a duplicate review request.
 
+- **Snapshot.** The workflow scores one snapshot of the latest observation. The review
+  write is a compare-and-swap on the current review, so a stale or concurrent write is
+  rejected instead of being silently mixed.
+- **Deadlines.** Every MCP call has a deadline (`TAZAMA_MCP_TIMEOUT_SECONDS`, default 15).
+  The explanation call has its own (`TAZAMA_OLLAMA_TIMEOUT_SECONDS`, default 30). A value
+  that is invalid, not positive or not finite falls back to the default. A stalled model
+  cannot delay the review.
+- **Unconfirmed review submission.** If submitting a review times out, the workflow checks
+  what was actually stored. It reports `persisted` only if the stored review matches the
+  evidence. Otherwise it reports `unconfirmed`.
+
 ### Local model (`orchestration/explanation.py`)
 - Ollama with an open-weights model (default `llama3.2:3b`, set by
   `TAZAMA_OLLAMA_MODEL`).
@@ -95,14 +128,18 @@ not create a duplicate review request.
   explanation statements, and returns only the IDs of the ones that apply.
 - Output is validated. IDs outside the set are rejected. The model writes no free text
   that reaches the nurse.
-- If the model fails or is unavailable, the deterministic evidence is unchanged and the
-  review request is still created.
+- If the model fails, times out or is unavailable, the deterministic evidence is
+  unchanged and the review request is still created.
 
 ### Storage and audit (`src/tazama/storage/`, `src/tazama/audit/`)
-- SQLite stores observations, recheck schedules, review requests with their
+- SQLite stores observations, recheck obligations, review requests with their
   deterministic evidence, and audit events.
 - Audit events and attestations are append-only, enforced by database triggers.
 - Review requests are created as "pending" only.
+- Reviews are immutable revisions. If the same observation is reviewed again with changed
+  evidence, a new row is written with the next revision number and a pointer to the one it
+  supersedes. The earlier row is never edited. Unchanged evidence returns the existing
+  review.
 - `mcp_tool_calls` is a separate append-only audit table. It records one completed row per MCP
   invocation: UUID invocation ID, workflow run ID, MCP server identity, tool name, UTC start and
   completion timestamps, sanitised input JSON, sanitised output JSON or structured error JSON,
@@ -136,31 +173,44 @@ FastAPI over the configured local SQLite database:
   pending review state, nonclinical provenance, and MCP audit coverage errors. The workflow run ID
   correlates the response with `mcp_tool_calls` rows. The endpoint cannot approve reviews or change
   clinical priority or queue state.
+- `GET /api/v1/reassessments/due` lists stored reassessment obligations whose due time has
+  passed. It is read-only and does not run the clinical workflow.
 
 ### Dashboard (`web/`)
-Next.js. It lets a user record synthetic observations, request a reassessment, and view
-persisted timelines, evidence and backend status, with a safety notice. It has no approve,
+Next.js. It lets a user record synthetic observations (including the nurse's adult-chart
+applicability and assessed signs), request a reassessment, and view persisted timelines,
+evidence, due reassessments and backend status, with a safety notice. It has no approve,
 edit-priority or queue controls.
 
 ## Evidence and evaluation
 - `EVALS.md` and `tests/evals/` hold 14 passing cases and one documented unfixed failure
   (F01: a sign the nurse omits is not detected). It is left unfixed on purpose, because
-  fixing it would need the model to infer signs and so to influence priority.
+  fixing it would need the model to infer signs and so to influence priority. Those cases
+  run with the nurse having confirmed that the adult chart applies.
 - `data/demo/synthetic_cases_v1.json` holds three locked synthetic cases, tested in
   `tests/test_synthetic_demo_cases.py` against the real scoring and comparison code:
   A (stable: routine), B (observations changed: very urgent) and C (missing and off-chart
   data: abstains).
+- `tests/test_applicability_gate.py` covers the applicability gate: unconfirmed and "no"
+  abstain (including with an emergency sign), records stored without the field abstain, the
+  latest observation decides in both directions, and the abstention text tells the nurse
+  to escalate. It also runs through the real API and workflow.
 - Safety-boundary tests check that scoring never invents a priority.
 - Integration tests run a real MCP client against the real server over stdio.
 
 ## Known gaps
-- Review persistence allows only one pending review per observation. A later reassessment with
-  changed nurse-assessed sign evidence is rejected rather than overwriting or versioning the
-  existing review, so signs must be assessed before the first review is submitted. Review
-  versioning is not implemented.
+- Applicability is the nurse's judgement. Tazama does not check age or height, and the
+  adult chart's age and height criteria are not encoded.
+- Plausibility checks are structural only. No clinical reference ranges are applied,
+  because none has been clinically reviewed.
+- Protocol data was compared with the source chart by the authors. No clinician has
+  reviewed it.
 - The API has no endpoint that lists pending review requests; evidence is returned by the
   reassess response.
-- No overdue-reassessment rule exists. Time is captured as provenance only.
+- Tazama does not decide when a patient is due for reassessment. Reassessment obligations
+  store an explicit due time and policy reference given to them, and the API only lists
+  those past due. No workflow step creates them yet, and no intervals are invented.
+- Time is captured as provenance only.
 - The model's task is deliberately narrow (selecting among pre-approved statements).
 - Approval is a demo attestation only.
 - F01 (see above) is a documented, unfixed limitation.
