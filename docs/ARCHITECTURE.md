@@ -110,16 +110,21 @@ LangGraph with typed state and conditional routing. MCP failures are treated as
 "evidence unavailable", never as a negative clinical finding. Retrying the workflow does
 not create a duplicate review request.
 
-- **Snapshot.** The workflow scores one snapshot of the latest observation. The review
-  write is a compare-and-swap on the current review, so a stale or concurrent write is
-  rejected instead of being silently mixed.
-- **Deadlines.** Every MCP call has a deadline (`TAZAMA_MCP_TIMEOUT_SECONDS`, default 15).
-  The explanation call has its own (`TAZAMA_OLLAMA_TIMEOUT_SECONDS`, default 30). A value
-  that is invalid, not positive or not finite falls back to the default. A stalled model
-  cannot delay the review.
-- **Unconfirmed review submission.** If submitting a review times out, the workflow checks
-  what was actually stored. It reports `persisted` only if the stored review matches the
-  evidence. Otherwise it reports `unconfirmed`.
+- **Snapshot.** The workflow captures the latest observation once and reuses that snapshot
+  for comparison and priority assessment. Review submission uses an atomic compare-and-swap
+  precondition against the current review revision for that observation. Stale or conflicting
+  review writes are rejected. This does not independently guarantee that no newer observation
+  for the case arrived after the snapshot.
+- **Deadlines.** The history, priority and review MCP calls use `TAZAMA_MCP_TIMEOUT_SECONDS`
+  (default 15 seconds). The optional Time MCP call has a separate 5-second limit, and the demo
+  attestation call has no explicit timeout. Ollama explanations use
+  `TAZAMA_OLLAMA_TIMEOUT_SECONDS` (default 30 seconds). An invalid, non-positive or non-finite
+  value falls back to the default. A stalled or unavailable model does not indefinitely block
+  review submission.
+- **Unconfirmed review submission.** If submitting a review times out, the workflow reconciles
+  against the stored state. It reports `persisted` only when the stored review matches the
+  initial review it submitted. Otherwise it reports `unconfirmed`, which does not mean the
+  review is absent.
 
 ### Local model (`orchestration/explanation.py`)
 - Ollama with an open-weights model (default `llama3.2:3b`, set by
@@ -194,7 +199,8 @@ edit-priority or queue controls.
 - `tests/test_applicability_gate.py` covers the applicability gate: unconfirmed and "no"
   abstain (including with an emergency sign), records stored without the field abstain, the
   latest observation decides in both directions, and the abstention text tells the nurse
-  to escalate. It also runs through the real API and workflow.
+  to escalate. The suite also exercises the actual reassessment API endpoint and workflow
+  with injected test tools; real MCP stdio integration is tested separately.
 - Safety-boundary tests check that scoring never invents a priority.
 - Integration tests run a real MCP client against the real server over stdio.
 
