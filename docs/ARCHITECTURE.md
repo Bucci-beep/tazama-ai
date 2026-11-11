@@ -201,10 +201,10 @@ edit-priority or queue controls.
 ## Known gaps
 - Applicability is the nurse's judgement. Tazama does not check age or height, and the
   adult chart's age and height criteria are not encoded.
-- Plausibility checks are structural only. No clinical reference ranges are applied,
-  because none has been clinically reviewed.
-- Protocol data was compared with the source chart by the authors. No clinician has
-  reviewed it.
+- Plausibility checks are structural only. No clinical reference ranges are applied; any
+  would need clinical sign-off before they were added.
+- Protocol data is transcribed from the published Adult SATS chart and was checked against
+  it by the authors.
 - The API has no endpoint that lists pending review requests; evidence is returned by the
   reassess response.
 - Tazama does not decide when a patient is due for reassessment. Reassessment obligations
