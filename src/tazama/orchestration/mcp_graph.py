@@ -371,8 +371,11 @@ def build_mcp_triage_graph(
                     saved = ReviewRepository(repository.database).get_by_observation_id(
                         request.observation_id
                     )
+                    latest = repository.get_timeline(request.case_id).latest()
                     if (
-                        predecessor is None
+                        latest is not None
+                        and latest.observation_id == request.observation_id
+                        and predecessor is None
                         and saved is not None
                         and saved.revision == 1
                         and saved.supersedes_request_id is None
