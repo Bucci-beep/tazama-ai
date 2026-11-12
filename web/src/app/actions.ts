@@ -85,7 +85,10 @@ export async function requestReassessmentAction(
   }
   return {
     status: "success",
-    message: "Reassessment completed. Review status is shown below.",
+    message:
+      response.reassessment.status === "review_submission_failed"
+        ? "Reassessment evidence was produced, but no review was confirmed. See the warning below."
+        : "Reassessment completed. Review status is shown below.",
     result: response.reassessment,
   };
 }
