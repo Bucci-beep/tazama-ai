@@ -111,10 +111,12 @@ LangGraph with typed state and conditional routing. MCP failures are treated as
 not create a duplicate review request.
 
 - **Snapshot.** The workflow captures the latest observation once and reuses that snapshot
-  for comparison and priority assessment. Review submission uses an atomic compare-and-swap
-  precondition against the current review revision for that observation. Stale or conflicting
-  review writes are rejected. This does not independently guarantee that no newer observation
-  for the case arrived after the snapshot.
+  for comparison and priority assessment. Review submission checks, in the same database
+  transaction as the write, that the observation is still the latest for the case, and rejects
+  the review as superseded if a newer observation exists. It also uses an atomic
+  compare-and-swap precondition against the current review revision for that observation, so
+  stale or conflicting review writes are rejected. A newer observation can still arrive
+  immediately after a review is written; that review then belongs to a superseded observation.
 - **Deadlines.** The history, priority and review MCP calls use `TAZAMA_MCP_TIMEOUT_SECONDS`
   (default 15 seconds). The optional Time MCP call has a separate 5-second limit, and the demo
   attestation call has no explicit timeout. Ollama explanations use
@@ -123,8 +125,9 @@ not create a duplicate review request.
   review submission.
 - **Unconfirmed review submission.** If submitting a review times out, the workflow reconciles
   against the stored state. It reports `persisted` only when the stored review matches the
-  initial review it submitted. Otherwise it reports `unconfirmed`, which does not mean the
-  review is absent.
+  initial review it submitted and its observation is still the latest for the case. Otherwise
+  it reports `unconfirmed`, which does not mean the review is absent. If the review could not be
+  confirmed, the dashboard says so instead of reporting the reassessment as completed.
 
 ### Local model (`orchestration/explanation.py`)
 - Ollama with an open-weights model (default `llama3.2:3b`, set by
@@ -175,52 +178,4 @@ FastAPI over the configured local SQLite database:
 - `POST /api/v1/cases/{case_id}/observations` persists synthetic observations without scoring.
 - `POST /api/v1/cases/{case_id}/reassess` preflights the persisted timeline, then invokes the
   existing LangGraph workflow. Its typed response includes deterministic evidence, tool errors,
-  pending review state, nonclinical provenance, and MCP audit coverage errors. The workflow run ID
-  correlates the response with `mcp_tool_calls` rows. The endpoint cannot approve reviews or change
-  clinical priority or queue state.
-- `GET /api/v1/reassessments/due` lists stored reassessment obligations whose due time has
-  passed. It is read-only and does not run the clinical workflow.
-
-### Dashboard (`web/`)
-Next.js. It lets a user record synthetic observations (including the nurse's adult-chart
-applicability and assessed signs), request a reassessment, and view persisted timelines,
-evidence, due reassessments and backend status, with a safety notice. It has no approve,
-edit-priority or queue controls.
-
-## Evidence and evaluation
-- `EVALS.md` and `tests/evals/` hold 14 passing cases and one documented unfixed failure
-  (F01: a sign the nurse omits is not detected). It is left unfixed on purpose, because
-  fixing it would need the model to infer signs and so to influence priority. Those cases
-  run with the nurse having confirmed that the adult chart applies.
-- `data/demo/synthetic_cases_v1.json` holds three locked synthetic cases, tested in
-  `tests/test_synthetic_demo_cases.py` against the real scoring and comparison code:
-  A (stable: routine), B (observations changed: very urgent) and C (missing and off-chart
-  data: abstains).
-- `tests/test_applicability_gate.py` covers the applicability gate: unconfirmed and "no"
-  abstain (including with an emergency sign), records stored without the field abstain, the
-  latest observation decides in both directions, and the abstention text tells the nurse
-  to escalate. The suite also exercises the actual reassessment API endpoint and workflow
-  with injected test tools; real MCP stdio integration is tested separately.
-- Safety-boundary tests check that scoring never invents a priority.
-- Integration tests run a real MCP client against the real server over stdio.
-
-## Known gaps
-- Applicability is the nurse's judgement. Tazama does not check age or height, and the
-  adult chart's age and height criteria are not encoded.
-- Plausibility checks are structural only. No clinical reference ranges are applied; any
-  would need clinical sign-off before they were added.
-- Protocol data is transcribed from the published Adult SATS chart and was checked against
-  it by the authors.
-- The API has no endpoint that lists pending review requests; evidence is returned by the
-  reassess response.
-- Tazama does not decide when a patient is due for reassessment. Reassessment obligations
-  store an explicit due time and policy reference given to them, and the API only lists
-  those past due. No workflow step creates them yet, and no intervals are invented.
-- Time is captured as provenance only.
-- The model's task is deliberately narrow (selecting among pre-approved statements).
-- Approval is a demo attestation only.
-- F01 (see above) is a documented, unfixed limitation.
-
-## Deployment restrictions
-This is a research demonstration. No real patient information may be entered. No
-production clinical deployment is authorised.
+  pending review state, nonclinical provenance, and MCP audit
