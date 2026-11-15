@@ -212,7 +212,11 @@ export function ReassessmentPanel({ caseId }: { caseId: string }) {
       {state.status === "error" ? <p role="alert" className="mt-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800">Reassessment unavailable: {state.message}</p> : null}
       {state.status === "success" ? (
         <>
-          <p role="status" className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{state.message}</p>
+          {state.result.status === "review_submission_failed" ? (
+            <p role="alert" className="mt-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800">{state.message}</p>
+          ) : (
+            <p role="status" className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{state.message}</p>
+          )}
           <Evidence result={state.result} />
         </>
       ) : null}

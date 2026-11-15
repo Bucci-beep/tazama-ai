@@ -68,6 +68,16 @@ describe("requestReassessmentAction sign validation", () => {
     });
     expect(requestCaseReassessment).not.toHaveBeenCalled();
   });
+
+  it("does not describe a failed review submission as completed", async () => {
+    requestCaseReassessment.mockResolvedValue({
+      status: "completed",
+      reassessment: { status: "review_submission_failed" },
+    });
+    const result = await requestReassessmentAction(idle, form("assessed_none"));
+    expect(result.status).toBe("success");
+    expect(result.message).toContain("no review was confirmed");
+  });
 });
 
 

@@ -243,9 +243,14 @@ describe("ReassessmentPanel", () => {
   });
 
   it("does not treat HTTP success as confirmed review persistence", async () => {
-    action.mockResolvedValue(success(response({ status: "review_submission_failed", review_request_id: null, review_submission_status: "unconfirmed", review_submission_error: "MCP_REVIEW_SUBMISSION_UNCONFIRMED" })));
+    action.mockResolvedValue({
+      status: "success",
+      result: response({ status: "review_submission_failed", review_request_id: null, review_submission_status: "unconfirmed", review_submission_error: "MCP_REVIEW_SUBMISSION_UNCONFIRMED" }),
+      message: "Reassessment evidence was produced, but no review was confirmed. See the warning below.",
+    });
     await submit();
-    expect(await screen.findByRole("alert")).toHaveTextContent("No new review has been confirmed");
+    expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("No new review has been confirmed"))).toBe(true);
+    expect(screen.getByText(/Reassessment evidence was produced/)).toHaveClass("text-rose-800");
     expect(screen.queryByText(/A pending review request was confirmed/)).not.toBeInTheDocument();
   });
 

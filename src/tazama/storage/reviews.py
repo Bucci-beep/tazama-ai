@@ -311,6 +311,14 @@ class ReviewRepository:
             ).fetchone()
             if observation is None or observation[0] != request.case_id:
                 raise ValueError("Observation does not belong to the case")
+            latest = connection.execute(
+                """SELECT observation_id FROM observations
+                   WHERE case_id = ?
+                   ORDER BY recorded_at DESC, observation_id DESC LIMIT 1""",
+                (request.case_id,),
+            ).fetchone()
+            if latest is None or latest[0] != request.observation_id:
+                raise ValueError("OBSERVATION_SUPERSEDED")
             current = connection.execute(
                 """SELECT request_id, case_id, observation_id, status, created_at,
                           comparison_status, evidence_json, revision, supersedes_request_id
