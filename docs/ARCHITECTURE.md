@@ -111,10 +111,12 @@ LangGraph with typed state and conditional routing. MCP failures are treated as
 not create a duplicate review request.
 
 - **Snapshot.** The workflow captures the latest observation once and reuses that snapshot
-  for comparison and priority assessment. Review submission uses an atomic compare-and-swap
-  precondition against the current review revision for that observation. Stale or conflicting
-  review writes are rejected. This does not independently guarantee that no newer observation
-  for the case arrived after the snapshot.
+  for comparison and priority assessment. Review submission checks, in the same database
+  transaction as the write, that the observation is still the latest for the case, and rejects
+  the review as superseded if a newer observation exists. It also uses an atomic
+  compare-and-swap precondition against the current review revision for that observation, so
+  stale or conflicting review writes are rejected. A newer observation can still arrive
+  immediately after a review is written; that review then belongs to a superseded observation.
 - **Deadlines.** The history, priority and review MCP calls use `TAZAMA_MCP_TIMEOUT_SECONDS`
   (default 15 seconds). The optional Time MCP call has a separate 5-second limit, and the demo
   attestation call has no explicit timeout. Ollama explanations use
@@ -123,8 +125,9 @@ not create a duplicate review request.
   review submission.
 - **Unconfirmed review submission.** If submitting a review times out, the workflow reconciles
   against the stored state. It reports `persisted` only when the stored review matches the
-  initial review it submitted. Otherwise it reports `unconfirmed`, which does not mean the
-  review is absent.
+  initial review it submitted and its observation is still the latest for the case. Otherwise
+  it reports `unconfirmed`, which does not mean the review is absent. If the review could not be
+  confirmed, the dashboard says so instead of reporting the reassessment as completed.
 
 ### Local model (`orchestration/explanation.py`)
 - Ollama with an open-weights model (default `llama3.2:3b`, set by
